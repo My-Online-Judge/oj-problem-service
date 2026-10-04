@@ -14,7 +14,11 @@ Postgres (`problem-db`, schema by Flyway `V1` = the live tables, `V2` = statisti
 JWKS URI through the compose file.
 
 Statistics: `t_problem_stats` holds, per problem, how many submissions ended with each verdict. Only
-terminal verdicts count; a problem's total and accepted numbers are sums over it.
+terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group
+`problem-service-stats` keeps it from `oj.submission.events` (`SubmissionVerdictRecorded`, published by
+judge-api's outbox): one transaction per event, counted once per submission (`t_processed_verdicts`),
+verdicts of unknown problems skipped. A record it cannot read is retried twice, then published to
+`oj.submission.events.dlq`.
 
 ## Build and test
 

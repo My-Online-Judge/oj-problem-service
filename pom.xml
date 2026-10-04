@@ -181,6 +181,11 @@
 			<artifactId>spring-grpc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- Flyway (schema migrations; version managed by Spring Boot parent) -->
 		<dependency>
 			<groupId>org.flywaydb</groupId>

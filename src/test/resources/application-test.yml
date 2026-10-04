@@ -12,6 +12,13 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  kafka:
+    # No broker in most tests; the Kafka tests start an embedded one and turn both back on. Without this
+    # every context waits ~40 s for KafkaAdmin to give up creating the topics.
+    admin:
+      auto-create: false
+    listener:
+      auto-startup: false
   flyway:
     # Tests run on in-memory H2 with the schema built from entities (ddl-auto above).
     # The Flyway migrations are Postgres-specific, so Flyway stays off for the test profile.
