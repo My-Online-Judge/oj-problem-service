@@ -1,0 +1,103 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: backend-service
+  # Serialize any Instant/Date/Calendar JSON in Vietnam time (GMT+7). LocalDateTime fields are naive
+  # and unaffected by this — those are pinned via TimeZone.setDefault in BackendServiceApplication.main.
+  jackson:
+    time-zone: Asia/Ho_Chi_Minh
+  profiles:
+    active: @spring.profiles.active@
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: judge-api-results
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: "vn.thanhtuanle.messaging.event"
+        spring.json.value.default.type: "vn.thanhtuanle.messaging.event.SubmissionJudgedEvent"
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Local Redis answers in well under a millisecond. Without these, a Redis that stops answering
+      # holds each call (rate limiters, logout blocklist, the after-commit revocation write) for
+      # Lettuce's 60 s default before the caller's fallback runs. The command timeout also bounds
+      # the connection handshake.
+      timeout: 1s
+      connect-timeout: 1s
+      # We use Redis only for pub/sub fan-out, not Spring Data Redis repositories.
+      repositories:
+        enabled: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # An already-populated DB (built previously by initdb.sql + ddl-auto) adopts Flyway by being
+    # baselined at V1 (its schema is assumed to match) and then only V2+ run. A fresh empty DB runs
+    # every migration from V1. Reference-data inserts in V2 are idempotent, so both paths are safe.
+    baseline-on-migrate: true
+    baseline-version: 1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Explicit allowlist, NOT '*'. Exposing every endpoint let any authenticated user —
+        # including an ordinary contestant, since SecurityConfig gates non-scrape actuator
+        # endpoints only with .anyRequest().authenticated() — reach /actuator/heapdump and
+        # extract the JWT RSA private key from the dump. Only these four are needed: prometheus
+        # (scrape), metrics + health (ops), info. Everything else (env, beans, configprops,
+        # loggers, heapdump, threaddump, …) is now unmapped → 404 for everyone, admins included.
+        include: health,info,prometheus,metrics
+  endpoint:
+    # Defense in depth: even if the allowlist above is ever widened again, the two endpoints
+    # that leak the most (a full heap dump / every thread's stack) stay off. 'access: none' is
+    # the Spring Boot 3.4 replacement for the deprecated per-endpoint 'enabled' flag.
+    heapdump:
+      access: none
+    threaddump:
+      access: none
+
+logging:
+  level:
+    root: INFO
+    web: INFO
+  pattern:
+    # trace_id is put in the MDC by the OpenTelemetry Java agent; it links a log line to its trace in Jaeger.
+    correlation: "[%X{trace_id:-}] [%X{submissionId:-}] "
+
+judge:
+  server:
+    token: default_token
+  # Reconcile job: a submission left in PENDING/JUDGING longer than this is flipped to SYSTEM_ERROR.
+  stuck-timeout-min: ${JUDGE_STUCK_TIMEOUT_MIN:5}
+  reconcile-interval-ms: ${JUDGE_RECONCILE_INTERVAL_MS:60000}
+
+oj:
+  security:
+    jwt:
+      # identity-service issues the access tokens and publishes their public key; fetched lazily, on
+      # the first request that carries a token.
+      jwks-uri: ${OJ_JWKS_URI:http://identity-service:8000/.well-known/jwks.json}
+  submission:
+    cooldown-seconds: ${SUBMISSION_COOLDOWN_SECONDS:10}
+  outbox:
+    # Rows are normally sent right after their commit; this poll only retries what that dispatch could not send.
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}
+    batch-size: 100
+    retention-days: 7
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket: ${MINIO_BUCKET:test-cases}
+  bundle-retention: ${MINIO_BUNDLE_RETENTION:3}

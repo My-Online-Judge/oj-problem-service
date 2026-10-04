@@ -1,0 +1,40 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+    hibernate:
+      ddl-auto: validate
+server:
+  port: 8000
+
+judge:
+  server:
+    token: ${JUDGE_SERVER_TOKEN}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+openapi:
+  service:
+    api-docs: oj-api-service
+    server: http://localhost:${server.port}
+    title: OJ API service
+    version: 1.0.0
+
+logging:
+  level:
+    vn.thanhtuanle: DEBUG
+  file:
+    name: log/app.log

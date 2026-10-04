@@ -1,0 +1,34 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  devtools:
+    add-properties: true
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    # Tests run on in-memory H2 with the schema built from entities (ddl-auto above).
+    # The Flyway migrations are Postgres-specific, so Flyway stays off for the test profile.
+    enabled: false
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+openapi:
+  service:
+    api-docs: backend-service
+    server: ${BACKEND_SERVICE:http://localhost:${server.port}}
+    title: Backend service
+    version: 1.0.0
+oj:
+  outbox:
+    # Tests drive OutboxRelay directly; no background dispatch against the H2 database.
+    relay-enabled: false
