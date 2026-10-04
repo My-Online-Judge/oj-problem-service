@@ -23,8 +23,19 @@ Statistics: `t_problem_stats` holds, per problem, how many submissions ended wit
 terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group
 `problem-service-stats` keeps it from `oj.submission.events` (`SubmissionVerdictRecorded`, published by
 judge-api's outbox): one transaction per event, counted once per submission (`t_processed_verdicts`),
-verdicts of unknown problems skipped. A record it cannot read is retried twice, then published to
-`oj.submission.events.dlq`.
+verdicts of unknown problems skipped. A record it cannot read goes straight to
+`oj.submission.events.dlq`; any other failure (the database restarting, a lock) is retried with a growing
+pause, 1 s doubling to 30 s, for about 5.5 minutes before it is dead-lettered too. Each dead-lettered record
+increments `oj_stats_dead_lettered_total` (alert `ProblemStatsDeadLettered`).
+
+Replaying the dead letters once the cause is fixed — safe, a submission is counted once however often its
+event arrives:
+
+    docker exec oj-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+        --topic oj.submission.events.dlq --from-beginning --timeout-ms 5000 \
+        --property print.key=true --property key.separator='|' > dlq.txt
+    docker exec -i oj-kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
+        --topic oj.submission.events --property parse.key=true --property key.separator='|' < dlq.txt
 
 ## Build and test
 

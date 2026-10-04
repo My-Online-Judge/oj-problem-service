@@ -1,6 +1,7 @@
 package vn.thanhtuanle.problem;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,7 @@ class ProblemStatsConsumerKafkaTest extends PostgresTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired ProblemRepository problems;
     @Autowired JdbcTemplate jdbc;
+    @Autowired MeterRegistry meters;
 
     @Test
     void aVerdictEventFromTheOutboxIsCounted() throws Exception {
@@ -67,5 +69,6 @@ class ProblemStatsConsumerKafkaTest extends PostgresTest {
             assertThat(dead.key()).isEqualTo(key);
             assertThat(dead.value()).isEqualTo("{not json");
         }
+        assertThat(meters.counter("oj.stats.dead.lettered").count()).isGreaterThanOrEqualTo(1.0);
     }
 }
