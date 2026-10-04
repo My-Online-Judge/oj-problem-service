@@ -12,6 +12,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  grpc:
+    server:
+      # Several cached test contexts each start a server: a free port each instead of 9090.
+      port: 0
   kafka:
     # No broker in most tests; the Kafka tests start an embedded one and turn both back on. Without this
     # every context waits ~40 s for KafkaAdmin to give up creating the topics.
@@ -35,3 +39,7 @@ openapi:
     server: ${BACKEND_SERVICE:http://localhost:${server.port}}
     title: Problem service
     version: 1.0.0
+
+oj:
+  rpc:
+    token: test-only-service-token-0123456789abcdef

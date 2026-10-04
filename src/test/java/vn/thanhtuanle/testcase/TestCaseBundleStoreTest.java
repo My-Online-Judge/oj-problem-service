@@ -93,22 +93,30 @@ class TestCaseBundleStoreTest {
     }
 
     @Test
-    void currentVersion_readsThePointerObject() throws Exception {
+    void findCurrentVersion_readsThePointerObject() throws Exception {
         GetObjectResponse resp = new GetObjectResponse(
                 Headers.of(), "test-cases", null, "p/CURRENT",
                 new ByteArrayInputStream("deadbeef1234".getBytes(StandardCharsets.UTF_8)));
         when(minio.getObject(any(GetObjectArgs.class))).thenReturn(resp);
         TestCaseBundleStore store = new TestCaseBundleStore(minio, props());
 
-        assertThat(store.currentVersion("p")).isEqualTo("deadbeef1234");
+        assertThat(store.findCurrentVersion("p")).contains("deadbeef1234");
     }
 
     @Test
-    void currentVersion_throwsWhenAbsent() throws Exception {
+    void findCurrentVersion_isEmptyWhenNothingWasPublished() throws Exception {
         when(minio.getObject(any(GetObjectArgs.class))).thenThrow(noSuchKey());
         TestCaseBundleStore store = new TestCaseBundleStore(minio, props());
-        assertThatThrownBy(() -> store.currentVersion("p"))
-                .isInstanceOf(TestCaseBundleException.class);
+
+        assertThat(store.findCurrentVersion("p")).isEmpty();
+    }
+
+    @Test
+    void findCurrentVersion_throwsWhenMinioCannotBeRead() throws Exception {
+        when(minio.getObject(any(GetObjectArgs.class))).thenThrow(new java.io.IOException("connection refused"));
+        TestCaseBundleStore store = new TestCaseBundleStore(minio, props());
+
+        assertThatThrownBy(() -> store.findCurrentVersion("p")).isInstanceOf(TestCaseBundleException.class);
     }
 
     private static ErrorResponseException noSuchKey() throws Exception {

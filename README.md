@@ -7,11 +7,17 @@ judge-api in sub-project 2b; the code kept its packages (`problem`, `testcase`).
 | Port | Purpose |
 |---|---|
 | 8000 | API — the api-gateway routes `/api/v1/problems/**` here; reads are public, changes need `problem:*` |
+| 9090 | internal gRPC `oj.problem.v1.ProblemInternal` (oj-common's `problem_internal.proto`) — oj-net only |
 | 8081 | actuator: `/actuator/health`, `/actuator/prometheus` (dev/prod profiles) |
 
 Configuration comes from `judge-deployment/.env.problem` (see `.env.problem.example` there): its own
 Postgres (`problem-db`, schema by Flyway `V1` = the live tables, `V2` = statistics), plus MinIO and the
 JWKS URI through the compose file.
+
+Internal API: `GetJudgeSpec` (NOT_FOUND for an unknown or deleted slug, FAILED_PRECONDITION when no
+bundle is published, UNAVAILABLE when MinIO cannot be read) and `GetSampleTestCases` (sample cases only;
+deleted problems included; unknown id → empty). Every call must carry `x-oj-service-token` =
+`PROBLEM_RPC_TOKEN` (32+ characters; the service does not start without it).
 
 Statistics: `t_problem_stats` holds, per problem, how many submissions ended with each verdict. Only
 terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group

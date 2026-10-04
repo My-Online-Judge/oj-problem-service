@@ -10,11 +10,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The backfill recovers files from the bundle CURRENT points at: what publish writes, it must read back. */
+/** Against a real MinIO: CURRENT points at what publish wrote, and a never-published problem has no version. */
 @Testcontainers(disabledWithoutDocker = true)
 class TestCaseBundleStoreMinioTest {
 
@@ -45,18 +44,14 @@ class TestCaseBundleStoreMinioTest {
     }
 
     @Test
-    void theFilesOfThePublishedBundleAreReadBack() {
+    void currentPointsAtThePublishedBundle() {
         String hash = store.publish("p", List.of(file("1.in", "1 2\n"), file("1.out", "3\n"), file("info", "{}")));
 
-        Map<String, byte[]> files = store.currentBundleFiles("p");
-
-        assertThat(store.currentVersion("p")).isEqualTo(hash);
-        assertThat(files).containsOnlyKeys("1.in", "1.out", "info");
-        assertThat(new String(files.get("1.out"), StandardCharsets.UTF_8)).isEqualTo("3\n");
+        assertThat(store.findCurrentVersion("p")).contains(hash);
     }
 
     @Test
-    void aProblemWithoutABundleHasNoFiles() {
-        assertThat(store.currentBundleFiles("never-published")).isEmpty();
+    void aProblemWithoutABundleHasNoVersion() {
+        assertThat(store.findCurrentVersion("never-published")).isEmpty();
     }
 }

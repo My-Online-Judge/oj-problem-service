@@ -13,6 +13,16 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  grpc:
+    server:
+      # The internal API on its own Netty server. With the servlet stack present Spring gRPC would otherwise
+      # serve gRPC through Tomcat on the HTTP port.
+      port: ${GRPC_PORT:9090}
+      servlet:
+        enabled: false
+      # Callers compile against oj-common's stubs; nothing needs to discover the API at runtime.
+      reflection:
+        enabled: false
   kafka:
     bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
     consumer:
@@ -46,6 +56,9 @@ logging:
     correlation: "[%X{trace_id:-}] [%X{submissionId:-}] "
 
 oj:
+  rpc:
+    # Shared with the callers of the internal gRPC API (judge-api); see ServiceTokenServerInterceptor.
+    token: ${PROBLEM_RPC_TOKEN:}
   security:
     jwt:
       # identity-service issues the access tokens and publishes their public key; fetched lazily, on
