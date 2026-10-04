@@ -18,7 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
-import vn.thanhtuanle.common.payload.ApiResponse;
+import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
 
 import vn.thanhtuanle.common.constant.AppProperties;
 import vn.thanhtuanle.common.constant.Routes;

@@ -8,7 +8,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import vn.thanhtuanle.common.constant.AppProperties;
 import vn.thanhtuanle.common.enums.ProblemStatus;
-import vn.thanhtuanle.common.exception.ResourceNotFoundException;
+import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.common.util.AfterCommit;
 import vn.thanhtuanle.common.util.FileUtil;
 import vn.thanhtuanle.entity.Problem;

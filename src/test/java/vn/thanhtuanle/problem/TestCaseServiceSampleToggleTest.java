@@ -7,7 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import vn.thanhtuanle.common.enums.ProblemStatus;
-import vn.thanhtuanle.common.exception.ResourceNotFoundException;
+import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
 import vn.thanhtuanle.problem.dto.TestCaseResponse;

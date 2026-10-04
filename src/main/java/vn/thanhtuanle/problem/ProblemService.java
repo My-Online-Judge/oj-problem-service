@@ -12,11 +12,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import vn.thanhtuanle.common.constant.AppProperties;
-import vn.thanhtuanle.common.payload.PageResponse;
+import vn.thanhtuanle.oj.common.web.payload.PageResponse;
 import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.common.enums.SubmissionResult;
-import vn.thanhtuanle.common.exception.ResourceAlreadyExistException;
-import vn.thanhtuanle.common.exception.ResourceNotFoundException;
+import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
+import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.common.util.FileUtil;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;

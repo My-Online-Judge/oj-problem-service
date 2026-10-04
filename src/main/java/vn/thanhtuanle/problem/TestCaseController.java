@@ -19,7 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import vn.thanhtuanle.common.constant.AppProperties;
 import vn.thanhtuanle.common.constant.Routes;
-import vn.thanhtuanle.common.payload.ApiResponse;
+import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
 import vn.thanhtuanle.problem.dto.TestCaseResponse;
 import vn.thanhtuanle.problem.dto.UpdateTestCaseSampleRequest;
 

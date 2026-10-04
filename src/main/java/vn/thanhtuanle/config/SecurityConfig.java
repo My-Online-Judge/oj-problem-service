@@ -10,6 +10,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import vn.thanhtuanle.oj.common.security.OjJwtAuthenticationFilter;
+import vn.thanhtuanle.oj.common.web.security.OjAccessDeniedHandler;
+import vn.thanhtuanle.oj.common.web.security.OjAuthenticationEntryPoint;
 
 @Configuration
 @EnableMethodSecurity
@@ -17,8 +19,8 @@ import vn.thanhtuanle.oj.common.security.OjJwtAuthenticationFilter;
 public class SecurityConfig {
 
     private final OjJwtAuthenticationFilter jwtAuthFilter;
-    private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
-    private final CustomAccessDeniedHandler customAccessDeniedHandler;
+    private final OjAuthenticationEntryPoint authenticationEntryPoint;
+    private final OjAccessDeniedHandler accessDeniedHandler;
     private static final String[] WHITE_LIST = {
             "/h2-console/**",
             "/swagger-ui/**",
@@ -49,8 +51,8 @@ public class SecurityConfig {
                         .requestMatchers(WHITE_LIST).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(customAuthenticationEntryPoint)
-                        .accessDeniedHandler(customAccessDeniedHandler))
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

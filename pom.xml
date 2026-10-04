@@ -82,7 +82,7 @@
 		<dependency>
 			<groupId>vn.thanhtuanle</groupId>
 			<artifactId>oj-common</artifactId>
-			<version>0.2.0</version>
+			<version>0.3.0</version>
 		</dependency>
 		<!-- gRPC server for the internal API (port 9090). -->
 		<dependency>

@@ -11,7 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import vn.thanhtuanle.common.enums.ProblemStatus;
-import vn.thanhtuanle.common.payload.PageResponse;
+import vn.thanhtuanle.oj.common.web.payload.PageResponse;
 import vn.thanhtuanle.problem.dto.ProblemResponseDto;
 import vn.thanhtuanle.problem.dto.ProblemStatisticProjection;
 import vn.thanhtuanle.problem.dto.ProblemTagRow;
