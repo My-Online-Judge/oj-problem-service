@@ -9,10 +9,10 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>vn.thanhtuanle</groupId>
-	<artifactId>oj-identity-service</artifactId>
+	<artifactId>oj-problem-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>oj-identity-service</name>
-	<description>Identity service: authentication, users, roles, permissions, access bans</description>
+	<name>oj-problem-service</name>
+	<description>Problem service: problems, test cases and their bundles, per-problem statistics</description>
 	<url/>
 	<licenses>
 		<license/>
@@ -29,7 +29,21 @@
 	<properties>
 		<java.version>17</java.version>
 		<org.mapstruct.version>1.5.5.Final</org.mapstruct.version>
+		<!-- The last Spring gRPC line on Boot 3.5; it manages grpc 1.76.0 / protobuf 4.32.1, the versions
+		     oj-common generates its stubs against. -->
+		<spring-grpc.version>0.12.0</spring-grpc.version>
 	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.grpc</groupId>
+				<artifactId>spring-grpc-dependencies</artifactId>
+				<version>${spring-grpc.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<dependencies>
 
 		<!-- Heath check -->
@@ -64,11 +78,24 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
 		</dependency>
-		<!-- Code shared by the OJ services (lenient JWT filter, CurrentUser, fingerprint, Redis keys). -->
+		<!-- Code shared by the OJ services (JWT filter, CurrentUser, event records, the gRPC contract). -->
 		<dependency>
 			<groupId>vn.thanhtuanle</groupId>
 			<artifactId>oj-common</artifactId>
-			<version>0.1.0</version>
+			<version>0.2.0</version>
+		</dependency>
+		<!-- gRPC server for the internal API (port 9090). -->
+		<dependency>
+			<groupId>org.springframework.grpc</groupId>
+			<artifactId>spring-grpc-spring-boot-starter</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.grpc</groupId>
+			<artifactId>grpc-protobuf</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.grpc</groupId>
+			<artifactId>grpc-stub</artifactId>
 		</dependency>
 
 		<dependency>
@@ -132,12 +159,28 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Redis (SSE verdict fan-out across judge-api instances) -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-redis</artifactId>
-		</dependency>
 
+		<!-- MinIO: test-case sources and bundles -->
+		<dependency>
+			<groupId>io.minio</groupId>
+			<artifactId>minio</artifactId>
+			<version>8.5.17</version>
+		</dependency>
+		<!-- Kafka: verdict events for the statistics -->
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.grpc</groupId>
+			<artifactId>spring-grpc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- Flyway (schema migrations; version managed by Spring Boot parent) -->
 		<dependency>
 			<groupId>org.flywaydb</groupId>
@@ -148,22 +191,6 @@
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 
-		<!-- JWT -->
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-jackson</artifactId>
-			<version>0.11.5</version>
-		</dependency>
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-impl</artifactId>
-			<version>0.11.5</version>
-		</dependency>
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt-api</artifactId>
-			<version>0.11.5</version>
-		</dependency>
 
 	</dependencies>
 
@@ -223,7 +250,7 @@
 				</configuration>
 			</plugin>
 		</plugins>
-		<finalName>identity-service</finalName>
+		<finalName>problem-service</finalName>
 	</build>
 
 </project>

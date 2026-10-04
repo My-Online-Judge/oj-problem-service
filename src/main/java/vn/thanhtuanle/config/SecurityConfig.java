@@ -23,12 +23,9 @@ public class SecurityConfig {
             "/h2-console/**",
             "/swagger-ui/**",
             "/v3/api-docs/**",
+            // Problems are public to read; every mutation is guarded by @PreAuthorize.
             "/api/v1/problems",
             "/api/v1/problems/**",
-            "/api/v1/languages",
-            // judge_server heartbeat: authenticated by X-Judge-Server-Token, not JWT
-            "/api/judge_server_heartbeat",
-            "/api/judge_server_heartbeat/",
             // Observability endpoints for Prometheus scrape + ops (T5-11). Metric/health data
             // only; other actuator endpoints (env, beans, …) stay authenticated.
             "/actuator/prometheus",

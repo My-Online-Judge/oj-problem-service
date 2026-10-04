@@ -1,5 +1,5 @@
-# Build stage
-FROM maven:3.9-eclipse-temurin-17-alpine AS builder
+# Build stage. Debian-based, not Alpine: oj-common generates its gRPC stubs with protoc, a glibc binary.
+FROM maven:3.9-eclipse-temurin-17 AS builder
 # oj-common is a sibling repo that is not published yet: compile it into this build's local Maven
 # repository first. Compose passes it as the named build context "oj-common" (additional_contexts).
 COPY --from=oj-common . /oj-common
@@ -20,7 +20,7 @@ RUN mkdir /otel \
     && wget -q -O /otel/opentelemetry-javaagent.jar \
        "https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_AGENT_VERSION}/opentelemetry-javaagent-${OTEL_AGENT_VERSION}.jar" \
     && echo "${OTEL_AGENT_SHA256}  /otel/opentelemetry-javaagent.jar" | sha256sum -c -
-COPY --from=builder /app/target/identity-service.jar app.jar
-# 8000 = API (oj-net only), 8081 = actuator (health, prometheus)
-EXPOSE 8000 8081
+COPY --from=builder /app/target/problem-service.jar app.jar
+# 8000 = API (behind the gateway), 9090 = internal gRPC (oj-net only), 8081 = actuator (health, prometheus)
+EXPOSE 8000 9090 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

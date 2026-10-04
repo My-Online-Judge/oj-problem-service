@@ -17,9 +17,11 @@ spring:
 server:
   port: 8000
 
-judge:
+management:
   server:
-    token: ${JUDGE_SERVER_TOKEN}
+    # Actuator (health, prometheus) on its own port, like the gateway. Only the dev/prod profiles set
+    # it: under the test profile MockMvc must still reach /actuator on the main context.
+    port: 8081
 
 springdoc:
   api-docs:

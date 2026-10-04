@@ -28,12 +28,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * The whole request path with real tokens in the shape identity-service issues, verified by
- * oj-common's lenient filter inside judge-api's real SecurityConfig chain. Only the key lookup
+ * oj-common's lenient filter inside problem-service's real SecurityConfig chain. Only the key lookup
  * differs: the decoder is keyed with a test key directly, because MockMvc has no identity-service
  * for the JWKS URL to reach.
  */
@@ -92,15 +93,17 @@ class OjJwtWiringTest {
         return sign(claims(expiresAt).claim("roles", List.of("ADMIN")).build());
     }
 
+    // Problem mutations sit under the public /api/v1/problems path and are guarded by @PreAuthorize, so an
+    // authorized DELETE of an unknown slug reaches the service (404) and an unauthorized one stops at 403.
     @Test
     void aTokenAuthorisesByItsAuthorities() throws Exception {
-        mockMvc.perform(get("/api/v1/judge-servers").header("Authorization", "Bearer " + tokenFor("judgeserver:read")))
-                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/problems/no-such-problem").header("Authorization", "Bearer " + tokenFor("problem:delete")))
+                .andExpect(status().isNotFound());
     }
 
     @Test
     void aTokenWithoutThePermissionIsForbidden() throws Exception {
-        mockMvc.perform(get("/api/v1/judge-servers").header("Authorization", "Bearer " + tokenFor("problem:create")))
+        mockMvc.perform(delete("/api/v1/problems/no-such-problem").header("Authorization", "Bearer " + tokenFor("problem:create")))
                 .andExpect(status().isForbidden());
     }
 
@@ -108,9 +111,9 @@ class OjJwtWiringTest {
     void anOldFormatTokenIsAnonymous_401OnProtected_200OnPublic() throws Exception {
         String old = oldFormatToken(Instant.now().plusSeconds(600));
 
-        mockMvc.perform(get("/api/v1/judge-servers").header("Authorization", "Bearer " + old))
+        mockMvc.perform(get("/actuator/info").header("Authorization", "Bearer " + old))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/v1/languages").header("Authorization", "Bearer " + old))
+        mockMvc.perform(get("/api/v1/problems").header("Authorization", "Bearer " + old))
                 .andExpect(status().isOk());
     }
 
@@ -119,7 +122,7 @@ class OjJwtWiringTest {
         // The cookie's age is fixed (1 day) while the token lifetime is configuration: it can ride expired.
         String expired = oldFormatToken(Instant.now().minusSeconds(3600));
 
-        mockMvc.perform(get("/api/v1/languages").cookie(new Cookie("accessToken", expired)))
+        mockMvc.perform(get("/api/v1/problems").cookie(new Cookie("accessToken", expired)))
                 .andExpect(status().isOk());
     }
 }

@@ -24,11 +24,7 @@ springdoc:
     enabled: true
 openapi:
   service:
-    api-docs: backend-service
+    api-docs: problem-service
     server: ${BACKEND_SERVICE:http://localhost:${server.port}}
-    title: Backend service
+    title: Problem service
     version: 1.0.0
-oj:
-  outbox:
-    # Tests drive OutboxRelay directly; no background dispatch against the H2 database.
-    relay-enabled: false

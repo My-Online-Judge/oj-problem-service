@@ -19,6 +19,15 @@ import java.util.UUID;
 
 @Repository
 public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpecificationExecutor<Problem> {
+
+    /** Per problem: every counted submission, and the accepted ones (SubmissionResult.ACCEPTED = 0). */
+    String STATS_BY_PROBLEM = """
+            SELECT problem_id,
+                   SUM(submission_count) AS total,
+                   SUM(CASE WHEN verdict = 0 THEN submission_count ELSE 0 END) AS accepted
+            FROM t_problem_stats
+            GROUP BY problem_id""";
+
     /** True for every problem ever created with this slug, deleted ones included: a slug is never reused. */
     boolean existsByProblemSlug(String problemSlug);
 
@@ -31,25 +40,26 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
         return findByProblemSlugAndStatusNot(problemSlug, ProblemStatus.DELETED.getValue());
     }
 
+    /** Every live problem with its submission totals (terminal verdicts only, from t_problem_stats). */
     @Query(value = """
             SELECT
                 p.*,
-                COUNT(s.id) AS totalSubmission,
-                COUNT(CASE WHEN s.status = 0 THEN 1 END) AS acceptedSubmission
+                CAST(COALESCE(st.total, 0) AS integer) AS totalSubmission,
+                CAST(COALESCE(st.accepted, 0) AS integer) AS acceptedSubmission
             FROM t_problems p
-            LEFT JOIN t_submissions s ON p.id = s.problem_id
+            LEFT JOIN (""" + STATS_BY_PROBLEM + """
+            ) st ON st.problem_id = p.id
             WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
                    OR p.description ILIKE CONCAT('%', :search, '%'))
               AND (:status IS NULL OR p.status = :status)
               AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
-              AND p.status <> 2 -- ProblemStatus.DELETED
-            GROUP BY p.id
+              AND p.status <> 2 /* ProblemStatus.DELETED */
             """, countQuery = """
             SELECT count(*) FROM t_problems p
             WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%'))
               AND (:status IS NULL OR p.status = :status)
               AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
-              AND p.status <> 2 -- ProblemStatus.DELETED
+              AND p.status <> 2 /* ProblemStatus.DELETED */
             """, nativeQuery = true)
     Page<ProblemStatisticProjection> findProblemsWithStats(String search, Integer status, Integer hardnessLevel,
             Pageable pageable);
@@ -60,16 +70,16 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
     @Query(value = """
             SELECT
                 p.*,
-                COUNT(s.id) AS totalSubmission,
-                COUNT(CASE WHEN s.status = 0 THEN 1 END) AS acceptedSubmission
+                CAST(COALESCE(st.total, 0) AS integer) AS totalSubmission,
+                CAST(COALESCE(st.accepted, 0) AS integer) AS acceptedSubmission
             FROM t_problems p
-            LEFT JOIN t_submissions s ON p.id = s.problem_id
+            LEFT JOIN (""" + STATS_BY_PROBLEM + """
+            ) st ON st.problem_id = p.id
             WHERE p.problem_slug = :slug
-              AND p.status <> 2 -- ProblemStatus.DELETED
-            GROUP BY p.id
+              AND p.status <> 2 /* ProblemStatus.DELETED */
             """, nativeQuery = true)
     Optional<ProblemStatisticProjection> findByProblemSlugWithStats(@Param("slug") String slug);
 
-    @Query(value = "SELECT status AS result, count(*) as count FROM t_submissions WHERE problem_id = :problemId GROUP BY status", nativeQuery = true)
+    @Query(value = "SELECT verdict AS result, submission_count AS count FROM t_problem_stats WHERE problem_id = :problemId", nativeQuery = true)
     List<ProblemStatisticsInfo> countSubmissionsByResult(@Param("problemId") UUID problemId);
 }
