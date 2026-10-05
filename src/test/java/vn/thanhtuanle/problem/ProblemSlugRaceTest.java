@@ -24,8 +24,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Two creates of one slug at once: both pass existsByProblemSlug (neither has committed), so only the unique index
- * decides. The loser must get 409 — and must fail before writing any test-case file, or it would overwrite the
- * winner's files in MinIO.
+ * decides. The loser must be refused like a taken slug (ResourceAlreadyExistException, 400 through oj-common's
+ * handler) — and must fail before writing any test-case file, or it would overwrite the winner's files in MinIO.
  */
 @ExtendWith(MockitoExtension.class)
 class ProblemSlugRaceTest {
@@ -50,7 +50,7 @@ class ProblemSlugRaceTest {
     }
 
     @Test
-    void theLoserOfAConcurrentCreateGets409BeforeWritingAnyFile() {
+    void theLoserOfAConcurrentCreateIsRefusedBeforeWritingAnyFile() {
         Problem problem = Problem.builder().problemSlug("a-plus-b").title("t").build();
         when(problemMapper.toEntity(any())).thenReturn(problem);
         when(problemRepository.saveAndFlush(problem)).thenThrow(violationOf("ux_problems_slug"));
