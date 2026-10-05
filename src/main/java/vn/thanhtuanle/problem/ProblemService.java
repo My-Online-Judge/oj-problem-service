@@ -2,6 +2,8 @@ package vn.thanhtuanle.problem;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -47,6 +49,8 @@ import vn.thanhtuanle.problem.dto.ProblemTagRow;
 @Slf4j
 public class ProblemService {
 
+    private static final String SLUG_INDEX = "ux_problems_slug";
+
     private final ProblemRepository problemRepository;
     private final ProblemMapper problemMapper;
     private final TestCaseSourceStore sources;
@@ -60,6 +64,9 @@ public class ProblemService {
 
         Problem problem = problemMapper.toEntity(dto);
         problem.setTestCases(new ArrayList<>());
+        // Claim the slug before any test-case file is written: of two concurrent creates of one slug the unique index
+        // lets one insert through, and the other fails here — before it could overwrite the winner's files.
+        problem = claimSlug(problem);
 
         // Process files
         processTestCases(zipFile, problem);
@@ -71,6 +78,18 @@ public class ProblemService {
         publisher.publish(savedProblem);
         log.info("Problem created successfully with ID: {}", savedProblem.getId());
         return problemMapper.toDto(savedProblem);
+    }
+
+    private Problem claimSlug(Problem problem) {
+        try {
+            return problemRepository.saveAndFlush(problem);
+        } catch (DataIntegrityViolationException e) {
+            if (e.getCause() instanceof ConstraintViolationException violation
+                    && SLUG_INDEX.equals(violation.getConstraintName())) {
+                throw new ResourceAlreadyExistException("Problem slug already exists: " + problem.getProblemSlug());
+            }
+            throw e;
+        }
     }
 
     private void validateCreateRequest(CreateProblemDto dto, MultipartFile zipFile) {
