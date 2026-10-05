@@ -22,7 +22,7 @@ deleted problems included; unknown id → empty). Every call must carry `x-oj-se
 Statistics: `t_problem_stats` holds, per problem, how many submissions ended with each verdict. Only
 terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group
 `problem-service-stats` keeps it from `oj.submission.events` (`SubmissionVerdictRecorded`, published by
-judge-api's outbox): one transaction per event, counted once per submission (`t_processed_verdicts`),
+submission-service's outbox): one transaction per event, counted once per submission (`t_processed_verdicts`),
 verdicts of unknown problems skipped. A record it cannot read goes straight to
 `oj.submission.events.dlq`; any other failure (the database restarting, a lock) is retried with a growing
 pause, 1 s doubling to 30 s, for about 5.5 minutes before it is dead-lettered too. Each dead-lettered record

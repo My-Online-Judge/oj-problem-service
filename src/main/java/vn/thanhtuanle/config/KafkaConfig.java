@@ -16,7 +16,7 @@ import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 import vn.thanhtuanle.oj.common.event.OjTopics;
 
 /**
- * The verdict topic is declared here as well as in judge-api, with the same partition count: whichever
+ * The verdict topic is declared here as well as in submission-service, with the same partition count: whichever
  * service starts first creates it, instead of broker auto-creation making a single partition.
  *
  * <p>Failures are told apart. A record that can never be read (not JSON, another version, incomplete) goes

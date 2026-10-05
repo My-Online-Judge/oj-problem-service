@@ -25,7 +25,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-/** The listener end to end: what judge-api's outbox puts on oj.submission.events, and what it cannot read. */
+/** The listener end to end: what submission-service's outbox puts on oj.submission.events, and what it cannot read. */
 @EmbeddedKafka(partitions = 1, topics = {OjTopics.SUBMISSION_EVENTS, OjTopics.SUBMISSION_EVENTS_DLQ})
 @TestPropertySource(properties = {
         "spring.kafka.bootstrap-servers=${spring.embedded.kafka.brokers}",

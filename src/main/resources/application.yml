@@ -57,7 +57,7 @@ logging:
 
 oj:
   rpc:
-    # Shared with the callers of the internal gRPC API (judge-api); see ServiceTokenServerInterceptor.
+    # Shared with the callers of the internal gRPC API (submission-service); see ServiceTokenServerInterceptor.
     token: ${PROBLEM_RPC_TOKEN:}
   security:
     jwt:
