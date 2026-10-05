@@ -80,16 +80,27 @@ public class TestCaseService {
         return byName;
     }
 
+    /** A sample test case's stored files; {@code name} is the judge's name for it (the file stem). */
+    public record SampleFiles(String name, String inputPath, String outputPath) {
+    }
+
     /**
-     * {@link #contextByName} for the problem with this id — deleted problems included, so old submissions
-     * stay readable. Empty for an unknown id: every row then shows as hidden.
-     *
-     * <p>Deliberately not {@code @Transactional}: it runs inside its caller's transaction (the verdict
-     * transaction among them), and a transactional proxy here would mark that transaction rollback-only
-     * on any exception before {@code LocalProblemCatalog.sampleCases} can fail closed.
+     * The sample test cases of the problem with this id — deleted problems included, so old submissions stay readable —
+     * without their contents, which {@link #content} reads from storage after this transaction. Empty for an unknown id.
      */
-    public Map<String, TestCaseContext> contextByProblemId(UUID problemId) {
-        return problemRepository.findById(problemId).map(this::contextByName).orElse(Map.of());
+    @Transactional(readOnly = true)
+    public List<SampleFiles> sampleFiles(UUID problemId) {
+        return problemRepository.findById(problemId)
+                .map(problem -> problem.getTestCases().stream()
+                        .filter(TestCase::isSample)
+                        .map(tc -> new SampleFiles(baseNameOf(tc.getInput()), tc.getInput(), tc.getOutput()))
+                        .toList())
+                .orElse(List.of());
+    }
+
+    /** A stored test-case file as text; empty when it is missing or unreadable (logged). */
+    public String content(String path) {
+        return readContentQuietly(path);
     }
 
     @Transactional

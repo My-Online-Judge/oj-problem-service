@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** What the internal API reads, each in its own read-only transaction (the test cases load lazily). */
+/** What the internal API reads: limits in one read-only transaction; samples as rows in one, then their files outside it. */
 @Service
 @RequiredArgsConstructor
 public class InternalProblemQueries {
@@ -34,12 +34,13 @@ public class InternalProblemQueries {
                 .map(p -> new ProblemLimits(p.getId(), p.getProblemSlug(), p.getTimeLimit(), p.getMemoryLimit()));
     }
 
-    /** The sample cases only, by name; deleted problems included, so old submissions stay readable. */
-    @Transactional(readOnly = true)
+    /**
+     * The sample cases only, by name; deleted problems included, so old submissions stay readable. The rows are read in
+     * their own read-only transaction and the files afterwards, so a slow MinIO never holds a database connection.
+     */
     public List<SampleCase> sampleCases(UUID problemId) {
-        return testCaseService.contextByProblemId(problemId).entrySet().stream()
-                .filter(e -> e.getValue().sample())
-                .map(e -> new SampleCase(e.getKey(), e.getValue().input(), e.getValue().expectedOutput()))
+        return testCaseService.sampleFiles(problemId).stream()
+                .map(f -> new SampleCase(f.name(), testCaseService.content(f.inputPath()), testCaseService.content(f.outputPath())))
                 .sorted(Comparator.comparing(SampleCase::name))
                 .toList();
     }
