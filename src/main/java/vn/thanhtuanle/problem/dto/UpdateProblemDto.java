@@ -2,6 +2,7 @@ package vn.thanhtuanle.problem.dto;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,6 +19,7 @@ import vn.thanhtuanle.common.enums.ProblemStatus;
 @AllArgsConstructor
 public class UpdateProblemDto {
     @NotBlank(message = "Title is required")
+    @Size(max = 255, message = "Title must be at most 255 characters")
     private String title;
 
     @NotBlank(message = "Subject is required")
@@ -35,17 +37,22 @@ public class UpdateProblemDto {
     private int hardnessLevel;
 
     @NotBlank(message = "Input description is required")
+    @Size(max = ProblemStatementLimits.MAX_STATEMENT_FIELD)
     private String inputDescription;
 
     @NotBlank(message = "Output description is required")
+    @Size(max = ProblemStatementLimits.MAX_STATEMENT_FIELD)
     private String outputDescription;
 
     @NotBlank(message = "Sample input is required")
+    @Size(max = ProblemStatementLimits.MAX_STATEMENT_FIELD)
     private String sampleInput;
 
     @NotBlank(message = "Sample output is required")
+    @Size(max = ProblemStatementLimits.MAX_STATEMENT_FIELD)
     private String sampleOutput;
 
+    @Size(max = ProblemStatementLimits.MAX_STATEMENT_FIELD)
     private String hint;
 
     private ProblemStatus status;
