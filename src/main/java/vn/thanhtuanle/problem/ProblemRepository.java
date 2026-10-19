@@ -4,6 +4,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.Query;
@@ -39,6 +41,11 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
     default Optional<Problem> findLiveBySlug(String problemSlug) {
         return findByProblemSlugAndStatusNot(problemSlug, ProblemStatus.DELETED.getValue());
     }
+
+    /** The live problem with this slug, row-locked until the transaction ends: serialises test-case changes. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Problem p WHERE p.problemSlug = :slug AND p.status <> 2")
+    Optional<Problem> findBySlugForUpdate(@Param("slug") String slug);
 
     /** Every live problem with its submission totals (terminal verdicts only, from t_problem_stats). */
     @Query(value = """

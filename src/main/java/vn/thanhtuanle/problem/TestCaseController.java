@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -21,6 +22,7 @@ import vn.thanhtuanle.common.constant.AppProperties;
 import vn.thanhtuanle.common.constant.Routes;
 import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
 import vn.thanhtuanle.problem.dto.TestCaseResponse;
+import vn.thanhtuanle.problem.dto.TestCaseSummary;
 import vn.thanhtuanle.problem.dto.UpdateTestCaseSampleRequest;
 
 import java.io.IOException;
@@ -36,11 +38,31 @@ public class TestCaseController {
     private final TestCaseService testCaseService;
 
     @GetMapping
-    @Operation(summary = "List a problem's test cases with file contents (admin only)")
+    @Operation(summary = "List a problem's test cases with sizes and previews (admin only)")
     @PreAuthorize("hasAuthority('problem:update')")
-    public ApiResponse<List<TestCaseResponse>> listTestCases(@PathVariable String slug) {
+    public ApiResponse<List<TestCaseSummary>> listTestCases(@PathVariable String slug) {
         log.info("Start list test cases: slug={}", slug);
         return ApiResponse.success(testCaseService.listTestCases(slug));
+    }
+
+    @GetMapping("/{testCaseId}")
+    @Operation(summary = "Read one test case with its full input and output (admin only)")
+    @PreAuthorize("hasAuthority('problem:update')")
+    public ApiResponse<TestCaseResponse> getTestCase(@PathVariable String slug, @PathVariable UUID testCaseId) {
+        log.info("Start get test case: slug={}, id={}", slug, testCaseId);
+        return ApiResponse.success(testCaseService.getTestCase(slug, testCaseId));
+    }
+
+    @PutMapping(path = "/{testCaseId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Replace a test case's input and output, keeping its name and visibility (admin only)")
+    @PreAuthorize("hasAuthority('problem:update')")
+    public ApiResponse<TestCaseSummary> updateTestCase(
+            @PathVariable String slug,
+            @PathVariable UUID testCaseId,
+            @RequestPart("input") MultipartFile input,
+            @RequestPart("output") MultipartFile output) throws IOException {
+        log.info("Start update test case: slug={}, id={}", slug, testCaseId);
+        return ApiResponse.success(testCaseService.updateTestCase(slug, testCaseId, input, output));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

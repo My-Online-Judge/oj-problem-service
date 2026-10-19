@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -95,5 +96,37 @@ class TestCaseControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sample\":true}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(authorities = "problem:update")
+    void getOneAllowed_whenUserHasProblemUpdatePermission() throws Exception {
+        mockMvc.perform(get(BASE + "/" + UUID.randomUUID())).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(authorities = "problem:create")
+    void getOneRequiresProblemUpdate() throws Exception {
+        mockMvc.perform(get(BASE + "/" + UUID.randomUUID())).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(authorities = "problem:update")
+    void updateAllowed_whenUserHasProblemUpdatePermission() throws Exception {
+        mockMvc.perform(put(BASE + "/" + UUID.randomUUID(), "a", "b")).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(authorities = "problem:create")
+    void updateRequiresProblemUpdate() throws Exception {
+        mockMvc.perform(put(BASE + "/" + UUID.randomUUID(), "a", "b")).andExpect(status().isForbidden());
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder put(
+            String url, String input, String output) {
+        return multipart(org.springframework.http.HttpMethod.PUT, url)
+                .file(new org.springframework.mock.web.MockMultipartFile("input", input.getBytes()))
+                .file(new org.springframework.mock.web.MockMultipartFile("output", output.getBytes()))
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf());
     }
 }

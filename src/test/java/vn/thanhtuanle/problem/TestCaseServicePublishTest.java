@@ -61,7 +61,7 @@ class TestCaseServicePublishTest {
     @Test
     void addingATestCaseStoresItsFilesAndRepublishes() throws Exception {
         Problem problem = problemWith(1);
-        when(problemRepository.findLiveBySlug("a-plus-b")).thenReturn(Optional.of(problem));
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
 
         service.addTestCase("a-plus-b", file("input", "2 3\n"), file("output", "5\n"));
 
@@ -75,7 +75,7 @@ class TestCaseServicePublishTest {
     void deletingATestCaseRepublishesWithoutItAndRemovesItsFiles() {
         Problem problem = problemWith(1, 2);
         TestCase second = problem.getTestCases().get(1);
-        when(testCaseRepository.findById(second.getId())).thenReturn(Optional.of(second));
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
 
         service.deleteTestCase("a-plus-b", second.getId());
 
@@ -88,7 +88,7 @@ class TestCaseServicePublishTest {
     void theLastTestCaseCannotBeDeleted() {
         Problem problem = problemWith(1);
         TestCase only = problem.getTestCases().get(0);
-        when(testCaseRepository.findById(only.getId())).thenReturn(Optional.of(only));
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
 
         assertThatThrownBy(() -> service.deleteTestCase("a-plus-b", only.getId()))
                 .isInstanceOf(IllegalArgumentException.class);

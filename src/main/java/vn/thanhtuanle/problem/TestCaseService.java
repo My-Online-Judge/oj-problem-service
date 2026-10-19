@@ -15,6 +15,7 @@ import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
 import vn.thanhtuanle.problem.dto.TestCaseContext;
 import vn.thanhtuanle.problem.dto.TestCaseResponse;
+import vn.thanhtuanle.problem.dto.TestCaseSummary;
 import vn.thanhtuanle.testcase.TestCaseBundlePublisher;
 import vn.thanhtuanle.testcase.TestCaseSourceStore;
 
@@ -30,7 +31,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Manages a problem's test cases after creation (list / add / import / delete). Files are kept in the
+ * Manages a problem's test cases after creation (list / read / add / update / import / delete). Files are kept in the
  * {@link TestCaseSourceStore} under {@code {slug}/{index}.in|out}, named with the next integer index so
  * the judge (which sorts {@code .in} files numerically) keeps a stable order. After every change to the
  * set of test cases the problem's bundle is rebuilt from the rows and republished.
@@ -45,21 +46,47 @@ public class TestCaseService {
     private final TestCaseSourceStore sources;
     private final TestCaseBundlePublisher publisher;
 
-    private static final Comparator<TestCaseResponse> BY_NUMERIC_NAME =
-            Comparator.comparingInt(r -> parseIntOrMax(r.getName()));
-
     @Transactional(readOnly = true)
-    public List<TestCaseResponse> listTestCases(String slug) {
+    public List<TestCaseSummary> listTestCases(String slug) {
         log.info("Start list test cases for problem: {}", slug);
         Problem problem = getProblemOrThrow(slug);
 
-        List<TestCaseResponse> result = new ArrayList<>();
-        for (TestCase tc : problem.getTestCases()) {
-            result.add(toResponse(tc));
+        List<TestCase> ordered = new ArrayList<>(problem.getTestCases());
+        ordered.sort(Comparator.comparingInt(tc -> parseIntOrMax(tc.getInput())));
+        List<TestCaseSummary> result = new ArrayList<>();
+        for (TestCase tc : ordered) {
+            result.add(toSummary(tc, readBytesQuietly(tc.getInput()), readBytesQuietly(tc.getOutput())));
         }
-        result.sort(BY_NUMERIC_NAME);
         log.info("End list test cases for problem: {} (count={})", slug, result.size());
         return result;
+    }
+
+    @Transactional(readOnly = true)
+    public TestCaseResponse getTestCase(String slug, UUID testCaseId) {
+        Problem problem = getProblemOrThrow(slug);
+        return toResponse(findIn(problem, testCaseId));
+    }
+
+    /** Rewrites both source files of a test case (name and sample flag stay) and republishes the bundle. */
+    @Transactional
+    public TestCaseSummary updateTestCase(String slug, UUID testCaseId, MultipartFile input, MultipartFile output)
+            throws IOException {
+        log.info("Start update test case {} for problem: {}", testCaseId, slug);
+        validateFile(input, "input");
+        validateFile(output, "output");
+
+        Problem problem = getProblemForUpdateOrThrow(slug);
+        TestCase tc = findIn(problem, testCaseId);
+
+        byte[] inBytes = input.getBytes();
+        byte[] outBytes = output.getBytes();
+        sources.put(tc.getInput(), inBytes);
+        sources.put(tc.getOutput(), outBytes);
+        // Published while the problem row is still locked, so a concurrent add cannot slip a stale bundle in between.
+        publisher.publish(problem);
+
+        log.info("End update test case {} for problem: {}", testCaseId, slug);
+        return toSummary(tc, inBytes, outBytes);
     }
 
     /**
@@ -109,7 +136,7 @@ public class TestCaseService {
         validateFile(input, "input");
         validateFile(output, "output");
 
-        Problem problem = getProblemOrThrow(slug);
+        Problem problem = getProblemForUpdateOrThrow(slug);
         int index = nextIndexFor(problem);
 
         byte[] inBytes = input.getBytes();
@@ -130,7 +157,7 @@ public class TestCaseService {
             throw new IllegalArgumentException("Zip file cannot be empty");
         }
 
-        Problem problem = getProblemOrThrow(slug);
+        Problem problem = getProblemForUpdateOrThrow(slug);
 
         Map<String, byte[]> extracted = FileUtil.extractZip(zipFile);
         Map<String, byte[]> inputFiles = new HashMap<>();
@@ -177,8 +204,8 @@ public class TestCaseService {
     @Transactional
     public void deleteTestCase(String slug, UUID testCaseId) {
         log.info("Start delete test case {} for problem: {}", testCaseId, slug);
-        TestCase tc = getOwnedTestCaseOrThrow(slug, testCaseId);
-        Problem problem = tc.getProblem();
+        Problem problem = getProblemForUpdateOrThrow(slug);
+        TestCase tc = findIn(problem, testCaseId);
         if (problem.getTestCases().size() <= 1) {
             // A bundle needs at least one test case; replace the last one by adding first, then deleting.
             throw new IllegalArgumentException("A problem needs at least one test case: add another before deleting this one");
@@ -234,6 +261,20 @@ public class TestCaseService {
                 .orElseThrow(() -> new ResourceNotFoundException("Problem not found with slug: " + slug));
     }
 
+    /** The live problem, row-locked until the transaction ends: test-case changes of one problem run one at a time. */
+    private Problem getProblemForUpdateOrThrow(String slug) {
+        return problemRepository.findBySlugForUpdate(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Problem not found with slug: " + slug));
+    }
+
+    private static TestCase findIn(Problem problem, UUID testCaseId) {
+        return problem.getTestCases().stream()
+                .filter(tc -> testCaseId.equals(tc.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Test case " + testCaseId + " not found for problem " + problem.getProblemSlug()));
+    }
+
     /**
      * Looks up a test case by id and verifies it belongs to the {@code slug} problem. Shared by
      * every mutation that must not act on a test case smuggled in under the wrong problem's slug.
@@ -257,6 +298,25 @@ public class TestCaseService {
                 .filter(Objects::nonNull)
                 .toList();
         return nextIndex(existing);
+    }
+
+    private TestCaseSummary toSummary(TestCase tc, byte[] inBytes, byte[] outBytes) {
+        return new TestCaseSummary(tc.getId(), baseNameOf(tc.getInput()), tc.isSample(),
+                inBytes.length, outBytes.length,
+                TestCasePreviews.preview(new String(inBytes, StandardCharsets.UTF_8)),
+                TestCasePreviews.preview(new String(outBytes, StandardCharsets.UTF_8)));
+    }
+
+    private byte[] readBytesQuietly(String relativePath) {
+        try {
+            return sources.get(relativePath).orElseGet(() -> {
+                log.warn("Test case file not stored, listing it as empty: {}", relativePath);
+                return new byte[0];
+            });
+        } catch (RuntimeException e) {
+            log.warn("Test case file not readable, listing it as empty: {}", relativePath, e);
+            return new byte[0];
+        }
     }
 
     private String readContentQuietly(String relativePath) {
