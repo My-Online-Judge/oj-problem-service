@@ -23,6 +23,15 @@ spring:
       protocol: SSL
     ssl:
       bundle: oj
+  grpc:
+    server:
+      # The internal API (9090) serves TLS and requires a CA-signed client certificate; only the CNs in
+      # oj.tls.grpc-allowed-clients get past oj-common's PeerIdentityServerInterceptor (PERMISSION_DENIED otherwise).
+      # The certificate replaces the service token (GrpcServerConfig).
+      ssl:
+        enabled: true
+        bundle: oj
+        client-auth: require
 # The API (server.port) and actuator (management.server.port) ports serve TLS and require a CA-signed client
 # certificate. On the API port only the CNs below get past oj-common's PeerCertificateFilter (403 otherwise); the
 # actuator port has no CN allowlist (Prometheus and the healthcheck present their own certificates). Management SSL
@@ -43,6 +52,7 @@ management:
 oj:
   tls:
     allowed-clients: api-gateway
+    grpc-allowed-clients: submission-service
   security:
     jwt:
       jwks-uri: https://identity-service:8000/.well-known/jwks.json

@@ -18,9 +18,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The internal API the submission side calls (port 9090, oj-net only, service token required). Status codes
- * are part of the contract: the caller's circuit breaker counts NOT_FOUND and FAILED_PRECONDITION as
- * answers, and retries only UNAVAILABLE.
+ * The internal API the submission side calls (port 9090, oj-net only; GrpcServerConfig decides who may call).
+ * Status codes are part of the contract: the caller's circuit breaker counts NOT_FOUND and FAILED_PRECONDITION
+ * as answers, and retries only UNAVAILABLE.
  */
 @Service
 @RequiredArgsConstructor

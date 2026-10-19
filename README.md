@@ -16,8 +16,11 @@ JWKS URI through the compose file.
 
 Internal API: `GetJudgeSpec` (NOT_FOUND for an unknown or deleted slug, FAILED_PRECONDITION when no
 bundle is published, UNAVAILABLE when MinIO cannot be read) and `GetSampleTestCases` (sample cases only;
-deleted problems included; unknown id → empty). Every call must carry `x-oj-service-token` =
-`PROBLEM_RPC_TOKEN` (32+ characters; the service does not start without it).
+deleted problems included; unknown id → empty). Under the `tls` profile callers authenticate by client
+certificate: 9090 serves TLS, requires a CA-signed certificate and answers only the CNs in
+`oj.tls.grpc-allowed-clients` (submission-service; PERMISSION_DENIED otherwise). A set `oj.rpc.token`
+(`PROBLEM_RPC_TOKEN`, 32+ characters) additionally requires `x-oj-service-token` on every call. With neither,
+the service does not start.
 
 Statistics: `t_problem_stats` holds, per problem, how many submissions ended with each verdict. Only
 terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group
