@@ -60,6 +60,9 @@ logging:
     correlation: "[%X{trace_id:-}] [%X{submissionId:-}] "
 
 oj:
+  testcases:
+    # After a bundle-format change (TestCaseBundleBuilder.FORMAT_VERSION) rebuild every bundle once, in the background.
+    republish-on-start: true
   rpc:
     # Optional: the tls profile authenticates gRPC callers by certificate. When set (32+ characters), every call
     # must also carry it as x-oj-service-token; see GrpcServerConfig.

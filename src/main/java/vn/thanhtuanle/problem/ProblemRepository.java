@@ -48,6 +48,10 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
     @Query("SELECT p FROM Problem p WHERE p.problemSlug = :slug AND p.status <> 2") // 2 = ProblemStatus.DELETED
     Optional<Problem> findBySlugForUpdate(@Param("slug") String slug);
 
+    /** The slugs of every problem that is not deleted. */
+    @Query("SELECT p.problemSlug FROM Problem p WHERE p.status <> 2") // 2 = ProblemStatus.DELETED
+    List<String> findLiveSlugs();
+
     /** Every live problem with its submission totals (terminal verdicts only, from t_problem_stats). */
     @Query(value = """
             SELECT

@@ -43,3 +43,5 @@ openapi:
 oj:
   rpc:
     token: test-only-service-token-0123456789abcdef
+  testcases:
+    republish-on-start: false

@@ -92,6 +92,32 @@ public class TestCaseBundleStore {
         }
     }
 
+    /** Bucket-root object recording the bundle format last republished; outside every {@code <slug>/} prefix. */
+    public static final String FORMAT_MARKER_KEY = ".bundle-format";
+
+    /** The text object at {@code key}; empty when it does not exist. Any other failure throws. */
+    public Optional<String> readText(String key) {
+        try (InputStream is = minio.getObject(GetObjectArgs.builder()
+                .bucket(props.getBucket()).object(key).build())) {
+            return Optional.of(new String(is.readAllBytes(), StandardCharsets.UTF_8).trim());
+        } catch (ErrorResponseException e) {
+            if (isMissing(e)) {
+                return Optional.empty();
+            }
+            throw new TestCaseBundleException("Failed to read object " + key, e);
+        } catch (Exception e) {
+            throw new TestCaseBundleException("Failed to read object " + key, e);
+        }
+    }
+
+    public void writeText(String key, String text) {
+        try {
+            putBytes(key, text.getBytes(StandardCharsets.UTF_8), "text/plain");
+        } catch (Exception e) {
+            throw new TestCaseBundleException("Failed to write object " + key, e);
+        }
+    }
+
     public boolean hasBundle(String slug) {
         return objectExists(currentKey(slug));
     }
