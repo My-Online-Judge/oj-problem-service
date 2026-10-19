@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * would make every judge-worker download the bundle again and, worse, would mean the judge now sees
  * different files. The fixtures in {@code src/test/resources/bundle-golden} cover a CRLF output, an
  * output without a final newline, UTF-8 text and the index 10 (which sorts before 2 as a string).
+ * Every output ends in exactly one {@code \n} or {@code \r\n}, so the stricter {@code stripped_output_md5} rule
+ * leaves this hash unchanged.
  */
 class TestCaseBundleBuilderGoldenTest {
 

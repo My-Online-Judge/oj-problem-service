@@ -25,6 +25,9 @@ final class TestCaseBundleBuilder {
     record SourcePair(String inputName, byte[] input, String outputName, byte[] output) {
     }
 
+    /** Version of the bundle format; bump it when the bundle's content rules change so bundles are published again. */
+    static final String FORMAT_VERSION = "2";
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private TestCaseBundleBuilder() {
@@ -43,14 +46,13 @@ final class TestCaseBundleBuilder {
     static byte[] info(List<SourcePair> pairs) {
         Map<String, Map<String, Object>> testCases = new TreeMap<>(); // keyed by name, in string order
         for (SourcePair pair : pairs) {
-            String outputText = new String(pair.output(), StandardCharsets.UTF_8).replaceAll("\\r?\\n$", "");
             Map<String, Object> tc = new LinkedHashMap<>();
             tc.put("input_name", pair.inputName());
             tc.put("input_size", pair.input().length);
             tc.put("output_name", pair.outputName());
             tc.put("output_size", pair.output().length);
             tc.put("output_md5", md5Hex(pair.output()));
-            tc.put("stripped_output_md5", md5Hex(outputText.getBytes(StandardCharsets.UTF_8)));
+            tc.put("stripped_output_md5", md5Hex(comparedOutput(pair.output())));
             testCases.put(pair.inputName().replace(".in", ""), tc);
         }
         Map<String, Object> info = new LinkedHashMap<>();
@@ -62,6 +64,31 @@ final class TestCaseBundleBuilder {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Cannot write the info file", e);
         }
+    }
+
+    /**
+     * The bytes judge-server compares a user's output with: {@code \r\n} becomes {@code \n}, then trailing
+     * {@code 0x20 0x09 0x0A 0x0D 0x0B 0x0C} go. That is Python's {@code bytes.rstrip()}, which qduoj applies to
+     * the user's output; Java's {@code strip()} would also remove U+3000 and the like. Works on bytes, never on a
+     * decoded String, so a non-UTF-8 output hashes exactly.
+     */
+    static byte[] comparedOutput(byte[] output) {
+        byte[] out = new byte[output.length];
+        int n = 0;
+        for (int i = 0; i < output.length; i++) {
+            if (output[i] == '\r' && i + 1 < output.length && output[i + 1] == '\n') {
+                continue; // drop the CR of a CRLF
+            }
+            out[n++] = output[i];
+        }
+        while (n > 0 && isAsciiSpace(out[n - 1])) {
+            n--;
+        }
+        return java.util.Arrays.copyOf(out, n);
+    }
+
+    private static boolean isAsciiSpace(byte b) {
+        return b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D || b == 0x0B || b == 0x0C;
     }
 
     private static String md5Hex(byte[] data) {
