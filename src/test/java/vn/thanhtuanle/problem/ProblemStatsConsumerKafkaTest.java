@@ -55,6 +55,25 @@ class ProblemStatsConsumerKafkaTest extends PostgresTest {
     }
 
     @Test
+    void aRejudgeEventMovesTheCount() throws Exception {
+        UUID problemId = problems.save(Problem.builder().title("kafka").problemSlug("kafka-" + UUID.randomUUID())
+                .status(ProblemStatus.ACTIVE.getValue()).timeLimit(1000).memoryLimit(256L).build()).getId();
+        UUID submissionId = UUID.randomUUID();
+
+        kafka.send(OjTopics.SUBMISSION_EVENTS, problemId.toString(), objectMapper.writeValueAsString(
+                new SubmissionVerdictRecorded(submissionId, problemId, 0).toEnvelope()));
+        kafka.send(OjTopics.SUBMISSION_EVENTS, problemId.toString(), objectMapper.writeValueAsString(
+                new SubmissionVerdictRecorded(submissionId, problemId, -1, true).toEnvelope()));
+
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("SELECT COALESCE(SUM(submission_count), 0) FROM t_problem_stats"
+                    + " WHERE problem_id = ? AND verdict = 0", Long.class, problemId)).isZero();
+            assertThat(jdbc.queryForObject("SELECT COALESCE(SUM(submission_count), 0) FROM t_problem_stats"
+                    + " WHERE problem_id = ? AND verdict = -1", Long.class, problemId)).isEqualTo(1L);
+        });
+    }
+
+    @Test
     void aRecordThatIsNotAnEventGoesToTheDeadLetterTopic() {
         String key = "poison-" + UUID.randomUUID();
         kafka.send(OjTopics.SUBMISSION_EVENTS, key, "{not json");
