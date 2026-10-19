@@ -3,6 +3,7 @@ package vn.thanhtuanle.testcase;
 import io.minio.BucketExistsArgs;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.ssl.DefaultSslBundleRegistry;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -22,7 +23,7 @@ class MinioClientTimeoutTest {
             MinioProperties props = new MinioProperties();
             props.setEndpoint("http://127.0.0.1:" + silent.getLocalPort());
             props.setReadTimeout(Duration.ofMillis(300));
-            MinioClient client = new MinioConfig().minioClient(props);
+            MinioClient client = new MinioConfig().minioClient(props, new DefaultSslBundleRegistry());
 
             Throwable thrown = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> catchThrowable(() ->
                     client.bucketExists(BucketExistsArgs.builder().bucket("test-cases").build())));

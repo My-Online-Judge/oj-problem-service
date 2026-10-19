@@ -49,6 +49,9 @@ management:
   health:
     ssl:
       certificate-validity-warning-threshold: 30d
+# MinIO (https://minio:9000): its certificate is verified against the CA of this bundle (MinioConfig).
+minio:
+  ssl-bundle: oj
 oj:
   tls:
     allowed-clients: api-gateway

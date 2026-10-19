@@ -22,4 +22,6 @@ public class MinioProperties {
     private Duration connectTimeout = Duration.ofSeconds(2);
     /** Time allowed for each read or write on an open connection: a MinIO that stops answering fails the call. */
     private Duration readTimeout = Duration.ofSeconds(10);
+    /** The SSL bundle whose CA verifies MinIO's certificate (the tls profile sets oj); unset = the JVM's default trust. */
+    private String sslBundle;
 }

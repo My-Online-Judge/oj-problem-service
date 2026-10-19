@@ -12,7 +12,8 @@ judge-api in sub-project 2b; the code kept its packages (`problem`, `testcase`).
 
 Configuration comes from `judge-deployment/.env.problem` (see `.env.problem.example` there): its own
 Postgres (`problem-db`, schema by Flyway `V1` = the live tables, `V2` = statistics), plus MinIO and the
-JWKS URI through the compose file.
+JWKS URI through the compose file. MinIO gets the service's own key (test-case bucket only); under the `tls` profile
+it is reached over https and its certificate is verified against the `oj` bundle's CA (`minio.ssl-bundle`).
 
 Internal API: `GetJudgeSpec` (NOT_FOUND for an unknown or deleted slug, FAILED_PRECONDITION when no
 bundle is published, UNAVAILABLE when MinIO cannot be read) and `GetSampleTestCases` (sample cases only;
