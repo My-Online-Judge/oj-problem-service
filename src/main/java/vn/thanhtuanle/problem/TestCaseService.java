@@ -55,7 +55,7 @@ public class TestCaseService {
         ordered.sort(Comparator.comparingInt(tc -> parseIntOrMax(tc.getInput())));
         List<TestCaseSummary> result = new ArrayList<>();
         for (TestCase tc : ordered) {
-            result.add(toSummary(tc, readBytesQuietly(tc.getInput()), readBytesQuietly(tc.getOutput())));
+            result.add(toSummary(tc, headQuietly(tc.getInput()), headQuietly(tc.getOutput())));
         }
         log.info("End list test cases for problem: {} (count={})", slug, result.size());
         return result;
@@ -86,7 +86,7 @@ public class TestCaseService {
         publisher.publish(problem);
 
         log.info("End update test case {} for problem: {}", testCaseId, slug);
-        return toSummary(tc, inBytes, outBytes);
+        return toSummary(tc, headOf(inBytes), headOf(outBytes));
     }
 
     /**
@@ -143,7 +143,7 @@ public class TestCaseService {
         byte[] outBytes = output.getBytes();
         TestCase created = persistTestCase(problem, slug, index, inBytes, outBytes);
 
-        problemRepository.save(problem);
+        problemRepository.saveAndFlush(problem); // a constraint failure surfaces before CURRENT moves
         publisher.publish(problem);
 
         log.info("End add test case for problem: {} as index {}", slug, index);
@@ -190,7 +190,7 @@ public class TestCaseService {
             index++;
         }
 
-        problemRepository.save(problem);
+        problemRepository.saveAndFlush(problem); // a constraint failure surfaces before CURRENT moves
         publisher.publish(problem);
 
         List<TestCaseResponse> responses = new ArrayList<>();
@@ -300,37 +300,60 @@ public class TestCaseService {
         return nextIndex(existing);
     }
 
-    private TestCaseSummary toSummary(TestCase tc, byte[] inBytes, byte[] outBytes) {
+    private static final int PREVIEW_BYTES = 1024;
+
+    private TestCaseSummary toSummary(TestCase tc, TestCaseSourceStore.Head in, TestCaseSourceStore.Head out) {
         return new TestCaseSummary(tc.getId(), baseNameOf(tc.getInput()), tc.isSample(),
-                inBytes.length, outBytes.length,
-                TestCasePreviews.preview(new String(inBytes, StandardCharsets.UTF_8)),
-                TestCasePreviews.preview(new String(outBytes, StandardCharsets.UTF_8)));
+                in.size(), out.size(), previewOf(in), previewOf(out));
+    }
+
+    private static TestCaseSourceStore.Head headOf(byte[] bytes) {
+        return new TestCaseSourceStore.Head(bytes.length,
+                java.util.Arrays.copyOf(bytes, Math.min(bytes.length, PREVIEW_BYTES)));
+    }
+
+    /** Size and first bytes of a stored file; zero-size when missing or unreadable (logged). */
+    private TestCaseSourceStore.Head headQuietly(String relativePath) {
+        try {
+            return sources.head(relativePath, PREVIEW_BYTES).orElseGet(() -> {
+                log.warn("Test case file not stored, listing it as empty: {}", relativePath);
+                return new TestCaseSourceStore.Head(0, new byte[0]);
+            });
+        } catch (RuntimeException e) {
+            log.warn("Test case file not readable, listing it as empty: {}", relativePath, e);
+            return new TestCaseSourceStore.Head(0, new byte[0]);
+        }
+    }
+
+    /** Preview of the first bytes; a multi-byte character cut by the byte limit is dropped, not shown as garbage. */
+    private static String previewOf(TestCaseSourceStore.Head head) {
+        byte[] p = head.prefix();
+        int end = p.length;
+        if (head.size() > p.length) {
+            while (end > 0 && (p[end - 1] & 0xC0) == 0x80) {
+                end--; // continuation bytes of a cut character
+            }
+            if (end > 0 && (p[end - 1] & 0x80) != 0) {
+                end--; // its lead byte
+            }
+        }
+        return TestCasePreviews.preview(new String(p, 0, end, StandardCharsets.UTF_8));
     }
 
     private byte[] readBytesQuietly(String relativePath) {
         try {
             return sources.get(relativePath).orElseGet(() -> {
-                log.warn("Test case file not stored, listing it as empty: {}", relativePath);
+                log.warn("Test case file not stored, returning empty content: {}", relativePath);
                 return new byte[0];
             });
         } catch (RuntimeException e) {
-            log.warn("Test case file not readable, listing it as empty: {}", relativePath, e);
+            log.warn("Test case file not readable, returning empty content: {}", relativePath, e);
             return new byte[0];
         }
     }
 
     private String readContentQuietly(String relativePath) {
-        try {
-            return sources.get(relativePath)
-                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
-                    .orElseGet(() -> {
-                        log.warn("Test case file not stored, returning empty content: {}", relativePath);
-                        return "";
-                    });
-        } catch (RuntimeException e) {
-            log.warn("Test case file not readable, returning empty content: {}", relativePath, e);
-            return "";
-        }
+        return new String(readBytesQuietly(relativePath), StandardCharsets.UTF_8);
     }
 
     private static void validateFile(MultipartFile file, String field) {

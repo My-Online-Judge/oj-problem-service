@@ -44,7 +44,7 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
 
     /** The live problem with this slug, row-locked until the transaction ends: serialises test-case changes. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT p FROM Problem p WHERE p.problemSlug = :slug AND p.status <> 2")
+    @Query("SELECT p FROM Problem p WHERE p.problemSlug = :slug AND p.status <> 2") // 2 = ProblemStatus.DELETED
     Optional<Problem> findBySlugForUpdate(@Param("slug") String slug);
 
     /** Every live problem with its submission totals (terminal verdicts only, from t_problem_stats). */

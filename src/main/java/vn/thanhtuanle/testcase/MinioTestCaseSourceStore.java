@@ -54,6 +54,29 @@ public class MinioTestCaseSourceStore implements TestCaseSourceStore {
     }
 
     @Override
+    public Optional<Head> head(String path, int maxBytes) {
+        try {
+            long size = minio.statObject(StatObjectArgs.builder()
+                    .bucket(props.getBucket()).object(key(path)).build()).size();
+            if (size == 0) {
+                return Optional.of(new Head(0, new byte[0]));
+            }
+            try (InputStream is = minio.getObject(GetObjectArgs.builder()
+                    .bucket(props.getBucket()).object(key(path)).offset(0L).length((long) Math.min(size, maxBytes))
+                    .build())) {
+                return Optional.of(new Head(size, is.readAllBytes()));
+            }
+        } catch (ErrorResponseException e) {
+            if (TestCaseBundleStore.isMissing(e)) {
+                return Optional.empty();
+            }
+            throw new TestCaseBundleException("Failed to read test-case file " + path, e);
+        } catch (Exception e) {
+            throw new TestCaseBundleException("Failed to read test-case file " + path, e);
+        }
+    }
+
+    @Override
     public boolean exists(String path) {
         try {
             minio.statObject(StatObjectArgs.builder().bucket(props.getBucket()).object(key(path)).build());

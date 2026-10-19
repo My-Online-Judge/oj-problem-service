@@ -5,7 +5,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
@@ -19,6 +22,7 @@ import vn.thanhtuanle.config.SecurityConfig;
 
 import java.util.UUID;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -122,11 +126,11 @@ class TestCaseControllerSecurityTest {
         mockMvc.perform(put(BASE + "/" + UUID.randomUUID(), "a", "b")).andExpect(status().isForbidden());
     }
 
-    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder put(
+    private static MockHttpServletRequestBuilder put(
             String url, String input, String output) {
-        return multipart(org.springframework.http.HttpMethod.PUT, url)
-                .file(new org.springframework.mock.web.MockMultipartFile("input", input.getBytes()))
-                .file(new org.springframework.mock.web.MockMultipartFile("output", output.getBytes()))
-                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf());
+        return multipart(HttpMethod.PUT, url)
+                .file(new MockMultipartFile("input", input.getBytes()))
+                .file(new MockMultipartFile("output", output.getBytes()))
+                .with(csrf());
     }
 }

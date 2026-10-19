@@ -11,6 +11,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
@@ -26,7 +28,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -35,7 +39,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 
@@ -55,6 +58,7 @@ class TestCaseUpdateTest extends PostgresTest {
     @Autowired ProblemRepository repo;
     @Autowired JdbcTemplate jdbc;
     @Autowired InMemoryTestCaseSourceStore sources;
+    @Autowired PlatformTransactionManager tm;
     @MockitoBean TestCaseBundleStore bundleStore;
 
     private String slug;
@@ -122,7 +126,11 @@ class TestCaseUpdateTest extends PostgresTest {
         assertThat(s.sample()).isTrue();
         assertThat(s.name()).isEqualTo("1");
         assertThat(s.inputSize()).isEqualTo(6);
-        verify(bundleStore).publish(eq(slug), any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BundleFile>> files = ArgumentCaptor.forClass(List.class);
+        verify(bundleStore).publish(eq(slug), files.capture());
+        BundleFile one = files.getValue().stream().filter(f -> f.name().equals("1.in")).findFirst().orElseThrow();
+        assertThat(new String(one.content(), StandardCharsets.UTF_8)).isEqualTo("10 20\n");
     }
 
     @Test
@@ -134,39 +142,81 @@ class TestCaseUpdateTest extends PostgresTest {
     }
 
     @Test
-    void concurrentAddAndUpdate() throws Exception {
-        for (int round = 0; round < 5; round++) {
-            Mockito.reset(bundleStore);
-            CountDownLatch go = new CountDownLatch(1);
-            ExecutorService pool = Executors.newFixedThreadPool(2);
-            String updated = "updated " + round + "\n";
-            Future<?> add = pool.submit(() -> {
-                go.await();
-                return service.addTestCase(slug, part("input", "x\n"), part("output", "y\n"));
-            });
-            Future<?> update = pool.submit(() -> {
-                go.await();
-                return service.updateTestCase(slug, firstId, part("input", updated), part("output", "o\n"));
-            });
-            go.countDown();
-            add.get(30, TimeUnit.SECONDS);
-            update.get(30, TimeUnit.SECONDS);
-            pool.shutdown();
+    void unknownSlugIs404ForGetOneAndUpdate() {
+        assertThatThrownBy(() -> service.getTestCase("no-such-slug", firstId))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.updateTestCase("no-such-slug", firstId, part("input", "a"), part("output", "b")))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
 
-            Problem problem = repo.findLiveBySlug(slug).orElseThrow();
-            List<String> names = jdbc.queryForList(
-                    "SELECT input FROM t_test_cases WHERE problem_id = ? ORDER BY input", String.class, problem.getId());
-            assertThat(names).doesNotHaveDuplicates();
-            int rows = names.size();
+    @Test
+    void updateWaitsWhileAnotherTransactionHoldsTheProblemRow() throws Exception {
+        assertBlockedWhileLocked(() -> service.updateTestCase(slug, firstId, part("input", "n\n"), part("output", "m\n")));
+    }
 
-            @SuppressWarnings("unchecked")
-            ArgumentCaptor<List<BundleFile>> files = ArgumentCaptor.forClass(List.class);
-            verify(bundleStore, atLeastOnce()).publish(eq(slug), files.capture());
-            List<BundleFile> last = files.getValue();
-            // the last publish saw every committed row and the updated bytes of test 1
-            assertThat(last.stream().filter(f -> f.name().endsWith(".in")).count()).isEqualTo(rows);
-            BundleFile one = last.stream().filter(f -> f.name().equals("1.in")).findFirst().orElseThrow();
-            assertThat(new String(one.content(), StandardCharsets.UTF_8)).isEqualTo(updated);
+    @Test
+    void addWaitsWhileAnotherTransactionHoldsTheProblemRow() throws Exception {
+        assertBlockedWhileLocked(() -> service.addTestCase(slug, part("input", "n\n"), part("output", "m\n")));
+    }
+
+    @Test
+    void concurrentAddsGetDistinctNamesAndTheBundleMatchesTheRows() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<?>> done = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            String body = "added " + i + "\n";
+            done.add(pool.submit(() -> {
+                go.await();
+                return service.addTestCase(slug, part("input", body), part("output", "o\n"));
+            }));
         }
+        go.countDown();
+        for (Future<?> f : done) {
+            f.get(30, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+
+        List<String> inputs = jdbc.queryForList("""
+                SELECT tc.input FROM t_test_cases tc JOIN t_problems p ON p.id = tc.problem_id
+                WHERE p.problem_slug = ?""", String.class, slug);
+        assertThat(inputs).containsExactlyInAnyOrder(slug + "/1.in", slug + "/2.in", slug + "/3.in");
+        assertThat(publishedInputNames()).containsExactlyInAnyOrder("1.in", "2.in", "3.in");
+    }
+
+    /** Holds the problem row in one transaction; the operation, on another thread, must not finish until it is released. */
+    private void assertBlockedWhileLocked(Callable<?> operation) throws Exception {
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> holder = pool.submit(() -> new TransactionTemplate(tm).executeWithoutResult(tx -> {
+                repo.findBySlugForUpdate(slug).orElseThrow();
+                locked.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<?> op = pool.submit(operation);
+            assertThatThrownBy(() -> op.get(500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+
+            release.countDown();
+            holder.get(10, TimeUnit.SECONDS);
+            op.get(10, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    private List<String> publishedInputNames() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BundleFile>> files = ArgumentCaptor.forClass(List.class);
+        verify(bundleStore, atLeastOnce()).publish(eq(slug), files.capture());
+        return files.getValue().stream().map(BundleFile::name).filter(n -> n.endsWith(".in")).toList();
     }
 }
