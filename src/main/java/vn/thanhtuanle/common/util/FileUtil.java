@@ -16,7 +16,7 @@ public class FileUtil {
 
     public static final int MAX_ENTRIES = 1000;
     public static final long MAX_ENTRY_BYTES = 50L << 20;
-    public static final long MAX_TOTAL_BYTES = 200L << 20;
+    public static final long MAX_TOTAL_BYTES = 100L << 20;
 
     public static Map<String, byte[]> extractZip(MultipartFile zipFile) throws IOException {
         try (InputStream in = zipFile.getInputStream()) {

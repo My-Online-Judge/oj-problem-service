@@ -57,15 +57,15 @@ class FileUtilTest {
     }
 
     @Test
-    void rejectsTotalOver200MiB() throws IOException {
-        String[] names = new String[5];
-        int[] sizes = new int[5];
-        for (int i = 0; i < 5; i++) {
+    void rejectsTotalOver100MiB() throws IOException {
+        String[] names = new String[3];
+        int[] sizes = new int[3];
+        for (int i = 0; i < 3; i++) {
             names[i] = i + ".in";
             sizes[i] = 41 * MIB;
         }
         byte[] z = zip(names, sizes);
-        long read = readAndExpectRejection(z, "200");
+        long read = readAndExpectRejection(z, "100");
         assertThat(read).isLessThan(FileUtil.MAX_TOTAL_BYTES + SLACK);
     }
 
