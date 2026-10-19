@@ -145,6 +145,7 @@ public class TestCaseService {
 
         Problem problem = getProblemForUpdateOrThrow(slug);
         int index = nextIndexFor(problem);
+        problem.setTestCaseHighWater(index);
 
         byte[] inBytes = input.getBytes();
         byte[] outBytes = output.getBytes();
@@ -197,6 +198,9 @@ public class TestCaseService {
             index++;
         }
 
+        if (!newCases.isEmpty()) {
+            problem.setTestCaseHighWater(index - 1);
+        }
         problemRepository.saveAndFlush(problem); // a constraint failure surfaces before CURRENT moves
         publisher.publish(problem);
 
@@ -304,7 +308,7 @@ public class TestCaseService {
                 .map(tc -> baseIndexOf(tc.getInput()))
                 .filter(Objects::nonNull)
                 .toList();
-        return nextIndex(existing);
+        return nextIndex(existing, problem.getTestCaseHighWater());
     }
 
     private static final int PREVIEW_BYTES = 1024;
@@ -405,10 +409,11 @@ public class TestCaseService {
     // --- pure helpers (unit-tested) -----------------------------------------------------------
 
     /**
-     * Next 1-based test case index: {@code max(existingIndices) + 1}, or {@code 1} when empty.
+     * Next 1-based test case index: one above the larger of the existing indices and the problem's high-water mark
+     * (the highest number ever used), so a deleted case's number is never reused.
      */
-    static int nextIndex(Collection<Integer> existingIndices) {
-        return existingIndices.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+    static int nextIndex(Collection<Integer> existingIndices, int highWater) {
+        return Math.max(highWater, existingIndices.stream().mapToInt(Integer::intValue).max().orElse(0)) + 1;
     }
 
     /**

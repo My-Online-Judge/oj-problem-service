@@ -12,17 +12,22 @@ class TestCaseServiceTest {
 
     @Test
     void nextIndex_existingIndices_returnsMaxPlusOne() {
-        assertEquals(6, TestCaseService.nextIndex(List.of(1, 2, 5)));
+        assertEquals(6, TestCaseService.nextIndex(List.of(1, 2, 5), 0));
+    }
+
+    @Test
+    void nextIndex_neverBelowTheHighWaterMark() {
+        assertEquals(6, TestCaseService.nextIndex(List.of(1, 2), 5));
     }
 
     @Test
     void nextIndex_empty_returnsOne() {
-        assertEquals(1, TestCaseService.nextIndex(List.of()));
+        assertEquals(1, TestCaseService.nextIndex(List.of(), 0));
     }
 
     @Test
     void nextIndex_unorderedSingle_returnsNext() {
-        assertEquals(4, TestCaseService.nextIndex(List.of(3, 1, 2)));
+        assertEquals(4, TestCaseService.nextIndex(List.of(3, 1, 2), 0));
     }
 
     @Test
@@ -52,6 +57,6 @@ class TestCaseServiceTest {
                 .map(TestCaseService::baseIndexOf)
                 .filter(Objects::nonNull)
                 .toList();
-        assertEquals(6, TestCaseService.nextIndex(indices));
+        assertEquals(6, TestCaseService.nextIndex(indices, 0));
     }
 }

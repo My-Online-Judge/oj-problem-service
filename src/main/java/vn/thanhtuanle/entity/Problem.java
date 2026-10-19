@@ -54,6 +54,10 @@ public class Problem extends BaseEntity {
 
     private int status;
 
+    /** The highest test-case number ever used; a new case is numbered above it, so a deleted number is never reused. */
+    @Column(name = "test_case_high_water", nullable = false)
+    private int testCaseHighWater;
+
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "t_problem_tags", joinColumns = @JoinColumn(name = "problem_id"))
     @Column(name = "tag")

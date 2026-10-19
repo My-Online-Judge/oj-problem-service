@@ -80,6 +80,10 @@ public class ProblemService {
 
         // Sort test cases by name
         problem.getTestCases().sort(Comparator.comparing(TestCase::getInput));
+        problem.setTestCaseHighWater(problem.getTestCases().stream()
+                .map(tc -> TestCaseService.baseIndexOf(tc.getInput()))
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(Integer::intValue).max().orElse(0));
 
         Problem savedProblem = problemRepository.save(problem);
         publisher.publish(savedProblem);

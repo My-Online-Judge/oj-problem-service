@@ -128,4 +128,42 @@ class TestCaseServicePublishTest {
         verifyNoInteractions(publisher);
         assertThat(sources.files).containsOnlyKeys("a-plus-b/1.in", "a-plus-b/1.out");
     }
+
+    @Test
+    void deletingTheHighestThenAddingNeverReusesItsNumber() throws Exception {
+        Problem problem = problemWith();
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
+        for (int i = 0; i < 3; i++) {
+            service.addTestCase("a-plus-b", file("input", "i"), file("output", "o"));
+        }
+        problem.getTestCases().forEach(tc -> tc.setId(UUID.randomUUID())); // the database assigns these
+        service.deleteTestCase("a-plus-b", problem.getTestCases().get(2).getId());
+
+        TestCaseSummary added = service.addTestCase("a-plus-b", file("input", "i"), file("output", "o"));
+
+        assertThat(added.name()).isEqualTo("4");
+        assertThat(problem.getTestCaseHighWater()).isEqualTo(4);
+        assertThat(sources.files).containsKey("a-plus-b/4.in").doesNotContainKey("a-plus-b/3.in");
+    }
+
+    @Test
+    void importAfterADeleteContinuesAboveTheMark() throws Exception {
+        Problem problem = problemWith(1, 2);
+        problem.setTestCaseHighWater(5); // 3..5 were added and deleted earlier
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(bos)) {
+            for (String[] e : new String[][] {{"1.in", "a"}, {"1.out", "b"}, {"2.in", "c"}, {"2.out", "d"}}) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(e[0]));
+                zip.write(e[1].getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+
+        List<TestCaseSummary> added = service.importTestCases("a-plus-b",
+                new MockMultipartFile("file", "t.zip", "application/zip", bos.toByteArray()));
+
+        assertThat(added).extracting(TestCaseSummary::name).containsExactly("6", "7");
+        assertThat(problem.getTestCaseHighWater()).isEqualTo(7);
+    }
 }
