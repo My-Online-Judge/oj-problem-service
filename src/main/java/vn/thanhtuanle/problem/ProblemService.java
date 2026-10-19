@@ -37,18 +37,21 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.Arrays;
 
 import vn.thanhtuanle.problem.dto.ProblemTagRow;
+import vn.thanhtuanle.problem.dto.TagCount;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ProblemService {
 
+    private static final String RESERVED_SLUG = "tags"; // GET /problems/tags
     private static final String SLUG_INDEX = "ux_problems_slug";
 
     private final ProblemRepository problemRepository;
@@ -62,7 +65,11 @@ public class ProblemService {
 
         validateCreateRequest(dto, zipFile);
 
+        dto.setTags(ProblemTags.normalize(dto.getTags()));
         Problem problem = problemMapper.toEntity(dto);
+        if (problem.getTags() == null) {
+            problem.setTags(new ArrayList<>());
+        }
         problem.setTestCases(new ArrayList<>());
         // Claim the slug before any test-case file is written: of two concurrent creates of one slug the unique index
         // lets one insert through, and the other fails here — before it could overwrite the winner's files.
@@ -94,6 +101,9 @@ public class ProblemService {
 
     private void validateCreateRequest(CreateProblemDto dto, MultipartFile zipFile) {
         rejectDeletedStatus(dto.getStatus());
+        if (RESERVED_SLUG.equalsIgnoreCase(dto.getProblemSlug())) {
+            throw new IllegalArgumentException("Problem slug \"" + RESERVED_SLUG + "\" is reserved");
+        }
         // Deleted problems count: their slug stays taken forever, because submissions keep the slug.
         if (problemRepository.existsByProblemSlug(dto.getProblemSlug())) {
             throw new ResourceAlreadyExistException("Problem slug already exists: " + dto.getProblemSlug());
@@ -152,16 +162,23 @@ public class ProblemService {
     }
 
     public PageResponse<ProblemResponseDto> getProblems(int page, int size, String search, ProblemStatus status,
-            Integer hardnessLevel) {
+            Integer hardnessLevel, String tag) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(AppProperties.DEFAULT_SORT_BY).descending());
 
         Integer statusValue = status != null ? status.getValue() : null;
         Page<ProblemResponseDto> dtoPage = problemRepository
-                .findProblemsWithStats(search, statusValue, hardnessLevel, pageable)
+                .findProblemsWithStats(search, statusValue, hardnessLevel,
+                        tag == null || tag.isBlank() ? null : tag.trim().toLowerCase(Locale.ROOT), pageable)
                 .map(problemMapper::toDto);
 
         attachTags(dtoPage.getContent());
         return PageResponse.of(dtoPage);
+    }
+
+    public List<TagCount> getTagVocabulary() {
+        return problemRepository.findTagVocabulary().stream()
+                .map(r -> new TagCount(r.getTag(), r.getCount()))
+                .toList();
     }
 
     private void attachTags(List<ProblemResponseDto> problems) {
@@ -207,6 +224,7 @@ public class ProblemService {
     public ProblemResponseDto updateProblem(String slug, UpdateProblemDto dto) {
         log.info("Start update problem: {}", slug);
         rejectDeletedStatus(dto.getStatus());
+        List<String> tags = ProblemTags.normalize(dto.getTags());
         Problem problem = problemRepository.findLiveBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Problem not found with slug: " + slug));
 
@@ -221,6 +239,10 @@ public class ProblemService {
         problem.setSampleInput(dto.getSampleInput());
         problem.setSampleOutput(dto.getSampleOutput());
         problem.setHint(dto.getHint());
+        if (tags != null) {
+            problem.getTags().clear();
+            problem.getTags().addAll(tags);
+        }
         if (dto.getStatus() != null) {
             problem.setStatus(dto.getStatus().getValue());
         }

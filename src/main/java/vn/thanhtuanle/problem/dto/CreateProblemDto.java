@@ -9,6 +9,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import vn.thanhtuanle.common.enums.ProblemStatus;
+import vn.thanhtuanle.problem.ProblemTags;
+
+import java.util.List;
 
 @Data
 @Builder
@@ -57,5 +60,8 @@ public class CreateProblemDto {
     private String hint;
 
     
+    @Size(max = ProblemTags.MAX_TAGS, message = "A problem has at most 10 tags")
+    private List<String> tags;
+
     private ProblemStatus status;
 }

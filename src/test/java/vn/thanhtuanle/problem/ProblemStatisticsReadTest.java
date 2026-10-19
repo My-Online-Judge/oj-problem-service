@@ -55,7 +55,7 @@ class ProblemStatisticsReadTest extends PostgresTest {
         stats.save(new ProblemStat(judged.getId(), SubmissionResult.ACCEPTED.getValue(), 1));
         stats.save(new ProblemStat(judged.getId(), SubmissionResult.RUNTIME_ERROR.getValue(), 4));
 
-        var page = problemService.getProblems(0, 10, marker, null, null);
+        var page = problemService.getProblems(0, 10, marker, null, null, null);
 
         assertThat(page.getData())
                 .extracting(ProblemResponseDto::getProblemSlug, ProblemResponseDto::getTotalSubmission,

@@ -8,6 +8,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import vn.thanhtuanle.common.enums.ProblemStatus;
+import vn.thanhtuanle.problem.ProblemTags;
+
+import java.util.List;
 
 /**
  * Metadata update for a problem. The slug (identity) and test-case files are NOT changed here —
@@ -54,6 +57,9 @@ public class UpdateProblemDto {
 
     @Size(max = ProblemStatementLimits.MAX_STATEMENT_FIELD)
     private String hint;
+
+    @Size(max = ProblemTags.MAX_TAGS, message = "A problem has at most 10 tags")
+    private List<String> tags;
 
     private ProblemStatus status;
 }

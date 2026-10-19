@@ -26,6 +26,7 @@ import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.problem.dto.CreateProblemDto;
 import vn.thanhtuanle.problem.dto.UpdateProblemDto;
 import vn.thanhtuanle.problem.dto.ProblemResponseDto;
+import vn.thanhtuanle.problem.dto.TagCount;
 
 import java.io.IOException;
 import java.util.List;
@@ -58,11 +59,18 @@ public class ProblemController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) ProblemStatus status,
-            @RequestParam(required = false) Integer hardnessLevel) {
+            @RequestParam(required = false) Integer hardnessLevel,
+            @RequestParam(required = false) String tag) {
 
         log.info("Start get problems: page={}, size={}, search={}, status={}, hardnessLevel={}",
                 page, size, search, status, hardnessLevel);
-        return ApiResponse.success(problemService.getProblems(page, size, search, status, hardnessLevel));
+        return ApiResponse.success(problemService.getProblems(page, size, search, status, hardnessLevel, tag));
+    }
+
+    @GetMapping("/tags")
+    @Operation(summary = "Tag vocabulary over active problems")
+    public ApiResponse<List<TagCount>> getTags() {
+        return ApiResponse.success(problemService.getTagVocabulary());
     }
 
     @GetMapping("/{slug}")

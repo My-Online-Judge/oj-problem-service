@@ -14,6 +14,7 @@ import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.problem.dto.ProblemStatisticProjection;
 import vn.thanhtuanle.problem.dto.ProblemStatisticsInfo;
 import vn.thanhtuanle.problem.dto.ProblemTagRow;
+import vn.thanhtuanle.problem.dto.TagCountRow;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -60,16 +61,29 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
                    OR p.description ILIKE CONCAT('%', :search, '%'))
               AND (:status IS NULL OR p.status = :status)
               AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
+              AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))
               AND p.status <> 2 /* ProblemStatus.DELETED */
             """, countQuery = """
             SELECT count(*) FROM t_problems p
-            WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%'))
+            WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
+                   OR p.description ILIKE CONCAT('%', :search, '%'))
               AND (:status IS NULL OR p.status = :status)
               AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
+              AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))
               AND p.status <> 2 /* ProblemStatus.DELETED */
             """, nativeQuery = true)
     Page<ProblemStatisticProjection> findProblemsWithStats(String search, Integer status, Integer hardnessLevel,
-            Pageable pageable);
+            String tag, Pageable pageable);
+
+    /** Tag vocabulary over active problems (ProblemStatus.ACTIVE = 1): most used first, then alphabetical. */
+    @Query(value = """
+            SELECT t.tag AS tag, count(*) AS count
+            FROM t_problem_tags t JOIN t_problems p ON p.id = t.problem_id
+            WHERE p.status = 1
+            GROUP BY t.tag
+            ORDER BY count(*) DESC, t.tag ASC
+            """, nativeQuery = true)
+    List<TagCountRow> findTagVocabulary();
 
     @Query(value = "SELECT problem_id AS problemId, tag AS tag FROM t_problem_tags WHERE problem_id IN (:ids) ORDER BY problem_id, tag", nativeQuery = true)
     List<ProblemTagRow> findTagsByProblemIds(@Param("ids") Collection<UUID> ids);
