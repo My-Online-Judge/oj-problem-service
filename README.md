@@ -11,8 +11,9 @@ judge-api in sub-project 2b; the code kept its packages (`problem`, `testcase`).
 | 8081 | actuator: `/actuator/health`, `/actuator/prometheus` (dev/prod profiles) |
 
 Configuration comes from `judge-deployment/.env.problem` (see `.env.problem.example` there): its own
-Postgres (`problem-db`, schema by Flyway `V1` = the live tables, `V2` = statistics), plus MinIO and the
-JWKS URI through the compose file. MinIO gets the service's own key (test-case bucket only); under the `tls` profile
+Postgres (`problem-db`, schema by Flyway `V1` = the live tables, `V2` = statistics), plus Kafka and MinIO
+through the compose file; the JWKS URI is fixed in the `tls` profile (`https://identity-service:8000/.well-known/jwks.json`,
+fetched over mutual TLS with the `oj` bundle). MinIO gets the service's own key (test-case bucket only); under the `tls` profile
 it is reached over https and its certificate is verified against the `oj` bundle's CA (`minio.ssl-bundle`).
 
 Internal API: `GetJudgeSpec` (NOT_FOUND for an unknown or deleted slug, FAILED_PRECONDITION when no
