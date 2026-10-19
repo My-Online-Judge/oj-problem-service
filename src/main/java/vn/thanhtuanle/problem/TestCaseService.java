@@ -13,6 +13,7 @@ import vn.thanhtuanle.common.util.AfterCommit;
 import vn.thanhtuanle.common.util.FileUtil;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
+import vn.thanhtuanle.oj.common.text.TextCaps;
 import vn.thanhtuanle.problem.dto.TestCaseContext;
 import vn.thanhtuanle.problem.dto.TestCaseResponse;
 import vn.thanhtuanle.problem.dto.TestCaseSummary;
@@ -113,7 +114,7 @@ public class TestCaseService {
 
     /**
      * The sample test cases of the problem with this id — deleted problems included, so old submissions stay readable —
-     * without their contents, which {@link #content} reads from storage after this transaction. Empty for an unknown id.
+     * without their contents, which {@link #contentCapped} reads from storage after this transaction. Empty for an unknown id.
      */
     @Transactional(readOnly = true)
     public List<SampleFiles> sampleFiles(UUID problemId) {
@@ -125,9 +126,15 @@ public class TestCaseService {
                 .orElse(List.of());
     }
 
-    /** A stored test-case file as text; empty when it is missing or unreadable (logged). */
-    public String content(String path) {
-        return readContentQuietly(path);
+    /**
+     * A stored test-case file as text of at most {@code maxChars} characters, marked when cut; empty when it is missing
+     * or unreadable (logged). Reads only the first {@code 4 * maxChars} bytes (a UTF-8 character is at most 4), so a
+     * huge file never comes into memory whole.
+     */
+    public String contentCapped(String path, int maxChars) {
+        TestCaseSourceStore.Head head = headQuietly(path, 4 * maxChars);
+        String text = decodePrefix(head);
+        return TextCaps.cap(text, maxChars, head.size() > head.prefix().length);
     }
 
     @Transactional
@@ -314,8 +321,12 @@ public class TestCaseService {
 
     /** Size and first bytes of a stored file; zero-size when missing or unreadable (logged). */
     private TestCaseSourceStore.Head headQuietly(String relativePath) {
+        return headQuietly(relativePath, PREVIEW_BYTES);
+    }
+
+    private TestCaseSourceStore.Head headQuietly(String relativePath, int maxBytes) {
         try {
-            return sources.head(relativePath, PREVIEW_BYTES).orElseGet(() -> {
+            return sources.head(relativePath, maxBytes).orElseGet(() -> {
                 log.warn("Test case file not stored, listing it as empty: {}", relativePath);
                 return new TestCaseSourceStore.Head(0, new byte[0]);
             });
@@ -327,6 +338,11 @@ public class TestCaseService {
 
     /** Preview of the first bytes; a multi-byte character cut by the byte limit is dropped, not shown as garbage. */
     private static String previewOf(TestCaseSourceStore.Head head) {
+        return TestCasePreviews.preview(decodePrefix(head));
+    }
+
+    /** The prefix as UTF-8 text; a multi-byte character cut by the byte limit is dropped, not decoded as garbage. */
+    private static String decodePrefix(TestCaseSourceStore.Head head) {
         byte[] p = head.prefix();
         int end = p.length;
         if (head.size() > p.length) {
@@ -337,7 +353,7 @@ public class TestCaseService {
                 end--; // its lead byte
             }
         }
-        return TestCasePreviews.preview(new String(p, 0, end, StandardCharsets.UTF_8));
+        return new String(p, 0, end, StandardCharsets.UTF_8);
     }
 
     private byte[] readBytesQuietly(String relativePath) {

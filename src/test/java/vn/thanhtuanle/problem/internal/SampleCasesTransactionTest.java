@@ -79,4 +79,20 @@ class SampleCasesTransactionTest {
                 new InternalProblemQueries.SampleCase("3", "", ""));
         assertThat(sources.transactionOpenOnRead).hasSize(4).containsOnly(false);
     }
+
+    @Test
+    void samplesAreCapped() {
+        String slug = "cap-" + UUID.randomUUID();
+        Problem p = Problem.builder().title("cap").problemSlug(slug).status(ProblemStatus.ACTIVE.getValue())
+                .timeLimit(1000).memoryLimit(64L).testCases(new ArrayList<>()).build();
+        p.getTestCases().add(TestCase.builder().input(slug + "/1.in").output(slug + "/1.out").sample(true).problem(p).build());
+        sources.put(slug + "/1.in", "x".repeat(70_000).getBytes(StandardCharsets.UTF_8));
+        sources.put(slug + "/1.out", "ok\n".getBytes(StandardCharsets.UTF_8));
+        UUID id = problems.save(p).getId();
+
+        List<InternalProblemQueries.SampleCase> cases = queries.sampleCases(id);
+
+        assertThat(cases).containsExactly(new InternalProblemQueries.SampleCase("1",
+                "x".repeat(65_536) + "\n…[truncated]", "ok\n"));
+    }
 }

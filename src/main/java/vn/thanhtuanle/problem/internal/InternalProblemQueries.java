@@ -3,6 +3,7 @@ package vn.thanhtuanle.problem.internal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.thanhtuanle.oj.common.text.TextCaps;
 import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.problem.TestCaseService;
 
@@ -40,7 +41,8 @@ public class InternalProblemQueries {
      */
     public List<SampleCase> sampleCases(UUID problemId) {
         return testCaseService.sampleFiles(problemId).stream()
-                .map(f -> new SampleCase(f.name(), testCaseService.content(f.inputPath()), testCaseService.content(f.outputPath())))
+                .map(f -> new SampleCase(f.name(), testCaseService.contentCapped(f.inputPath(), TextCaps.SAMPLE_MAX_CHARS),
+                        testCaseService.contentCapped(f.outputPath(), TextCaps.SAMPLE_MAX_CHARS)))
                 .sorted(Comparator.comparing(SampleCase::name))
                 .toList();
     }
