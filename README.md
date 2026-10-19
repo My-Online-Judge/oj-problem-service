@@ -33,14 +33,16 @@ verdicts of unknown problems skipped. A record it cannot read goes straight to
 pause, 1 s doubling to 30 s, for about 5.5 minutes before it is dead-lettered too. Each dead-lettered record
 increments `oj_stats_dead_lettered_total` (alert `ProblemStatsDeadLettered`).
 
-Replaying the dead letters once the cause is fixed — safe, a submission is counted once however often its
-event arrives:
+Replaying the dead letters once the cause is fixed — from the `judge-deployment` repo:
 
-    docker exec oj-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
-        --topic oj.submission.events.dlq --from-beginning --timeout-ms 5000 \
-        --property print.key=true --property key.separator='|' > dlq.txt
-    docker exec -i oj-kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
-        --topic oj.submission.events --property parse.key=true --property key.separator='|' < dlq.txt
+    scripts/replay-dlq.sh oj.submission.events.dlq oj.submission.events [--max N]
+
+The script copies the records, keys included, through the broker's loopback listener; its consumer group
+`dlq-replay` commits offsets, so a second run copies only records not copied before. It is safe for first
+verdicts: a submission is counted once however often its event arrives. A REJUDGE event replayed after a newer
+rejudge of the same submission moves the statistics back to the older verdict (the event has no ordering
+field): replay rejudge events only when no newer rejudge happened for those submissions, or run
+`scripts/stats-check.sh` afterwards.
 
 ## Build and test
 
