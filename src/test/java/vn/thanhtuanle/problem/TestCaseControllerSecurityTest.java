@@ -43,6 +43,11 @@ class TestCaseControllerSecurityTest {
     private UserDetailsService userDetailsService;
 
     @Test
+    void anonymousListTestCasesGets401() throws Exception {
+        mockMvc.perform(get(BASE)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @WithMockUser(authorities = "problem:update")
     void listAllowed_whenUserHasProblemUpdatePermission() throws Exception {
         mockMvc.perform(get(BASE)).andExpect(status().isOk());
