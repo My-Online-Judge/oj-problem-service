@@ -1,0 +1,119 @@
+package vn.thanhtuanle.common.util;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class FileUtilTest {
+
+    private static final int MIB = 1 << 20;
+    private static final long SLACK = 64 * 1024;
+
+    private static byte[] zip(String[] names, int[] sizes) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(bos)) {
+            byte[] chunk = new byte[MIB];
+            for (int i = 0; i < names.length; i++) {
+                zos.putNextEntry(new ZipEntry(names[i]));
+                int left = sizes[i];
+                while (left > 0) {
+                    int n = Math.min(left, chunk.length);
+                    zos.write(chunk, 0, n);
+                    left -= n;
+                }
+                zos.closeEntry();
+            }
+        }
+        return bos.toByteArray();
+    }
+
+    @Test
+    void rejectsMoreThan1000Entries() throws IOException {
+        String[] names = new String[1001];
+        int[] sizes = new int[1001];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = i + ".in";
+            sizes[i] = 1;
+        }
+        byte[] z = zip(names, sizes);
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(z)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1000");
+    }
+
+    @Test
+    void rejectsEntryOver50MiB() throws IOException {
+        byte[] z = zip(new String[] {"big.in"}, new int[] {51 * MIB});
+        long read = readAndExpectRejection(z, "50");
+        assertThat(read).isLessThan(FileUtil.MAX_ENTRY_BYTES + SLACK);
+    }
+
+    @Test
+    void rejectsTotalOver200MiB() throws IOException {
+        String[] names = new String[5];
+        int[] sizes = new int[5];
+        for (int i = 0; i < 5; i++) {
+            names[i] = i + ".in";
+            sizes[i] = 41 * MIB;
+        }
+        byte[] z = zip(names, sizes);
+        long read = readAndExpectRejection(z, "200");
+        assertThat(read).isLessThan(FileUtil.MAX_TOTAL_BYTES + SLACK);
+    }
+
+    /** Returns the decompressed bytes the extractor had read when it gave up (reported through its counter seam). */
+    private static long readAndExpectRejection(byte[] z, String limitText) {
+        long[] counted = new long[1];
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(z), n -> counted[0] += n))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(limitText);
+        return counted[0];
+    }
+
+    @Test
+    void rejectsDuplicateFlattenedNames() throws IOException {
+        byte[] z = zip(new String[] {"a/1.in", "b/1.in"}, new int[] {1, 1});
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(z)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1.in");
+    }
+
+    @Test
+    void rejectsParentTraversal() throws IOException {
+        byte[] z = zip(new String[] {"../1.in"}, new int[] {1});
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(z)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsAbsoluteName() throws IOException {
+        byte[] z = zip(new String[] {"/1.in"}, new int[] {1});
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(z)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void extractsNormalZip() throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(bos)) {
+            zos.putNextEntry(new ZipEntry("1.in"));
+            zos.write("1 2\n".getBytes());
+            zos.closeEntry();
+            zos.putNextEntry(new ZipEntry("1.out"));
+            zos.write("3\n".getBytes());
+            zos.closeEntry();
+        }
+        Map<String, byte[]> out = FileUtil.extractZip(new ByteArrayInputStream(bos.toByteArray()));
+        assertThat(out).containsOnlyKeys("1.in", "1.out");
+        assertThat(out.get("1.in")).isEqualTo("1 2\n".getBytes());
+        assertThat(out.get("1.out")).isEqualTo("3\n".getBytes());
+    }
+}

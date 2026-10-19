@@ -6,6 +6,10 @@ spring:
     name: problem-service
   # Serialize any Instant/Date/Calendar JSON in Vietnam time (GMT+7). LocalDateTime fields are naive
   # and unaffected by this — those are pinned via TimeZone.setDefault in ProblemServiceApplication.main.
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
   jackson:
     time-zone: Asia/Ho_Chi_Minh
   profiles:
