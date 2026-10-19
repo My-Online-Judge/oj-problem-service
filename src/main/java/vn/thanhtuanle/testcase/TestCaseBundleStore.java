@@ -96,6 +96,11 @@ public class TestCaseBundleStore {
         return objectExists(currentKey(slug));
     }
 
+    /**
+     * Creates the bucket if it is missing. In the stack minio-init has created it already and only the existence check
+     * runs: the service's key may not create buckets, so on a missing bucket makeBucket fails with AccessDenied
+     * (TestCaseStorageBootstrap logs it).
+     */
     public void ensureBucket() {
         try {
             boolean exists = minio.bucketExists(

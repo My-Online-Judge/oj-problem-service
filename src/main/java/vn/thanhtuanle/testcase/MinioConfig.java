@@ -22,6 +22,10 @@ public class MinioConfig {
                 .readTimeout(props.getReadTimeout())
                 .writeTimeout(props.getReadTimeout());
         if (StringUtils.hasText(props.getSslBundle())) {
+            // A TLS bundle with a plaintext endpoint would quietly skip TLS: refuse to start instead.
+            if (props.getEndpoint() == null || !props.getEndpoint().regionMatches(true, 0, "https://", 0, 8)) {
+                throw new IllegalStateException("minio.ssl-bundle is set, so minio.endpoint must start with https://");
+            }
             // TLS (sub-project 10): MinIO's certificate is verified against the bundle's CA (and its host name, by
             // OkHttp), not the JVM's default trust store, which does not know the private CA.
             SslBundle bundle = sslBundles.getBundle(props.getSslBundle());

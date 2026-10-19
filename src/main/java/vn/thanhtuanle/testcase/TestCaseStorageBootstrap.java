@@ -7,9 +7,11 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
 /**
- * Creates the test-case bucket when it does not exist yet, so a fresh MinIO volume works from the first
- * problem on (in 2a the one-time backfill did this; it left with it). A MinIO that cannot be reached is
- * logged, not fatal: problem pages and judging still work, only writing test cases fails until it is back.
+ * Checks on startup that the test-case bucket exists. In the stack, minio-init (judge-deployment) creates it before this
+ * service starts, and the service's own MinIO key may not create buckets (minio/policies/problem-rw.json). Where the key
+ * may, as with the root account in development, a missing bucket is created here, so a fresh MinIO volume works from the
+ * first problem on. A MinIO that cannot be reached, or a missing bucket this key may not create, is logged, not fatal:
+ * problem pages and judging still work, only writing test cases fails until it is fixed.
  */
 @Component
 @RequiredArgsConstructor
@@ -23,8 +25,8 @@ public class TestCaseStorageBootstrap implements ApplicationRunner {
         try {
             bundleStore.ensureBucket();
         } catch (TestCaseBundleException e) {
-            log.error("Test-case bucket not checked, MinIO unreachable; creating problems and test cases fails until it is: {}",
-                    e.getMessage());
+            log.error("Test-case bucket not checked or not created (MinIO unreachable, or the bucket missing and this key "
+                    + "may not create it); creating problems and test cases fails until it is: {}", e.getMessage());
         }
     }
 }

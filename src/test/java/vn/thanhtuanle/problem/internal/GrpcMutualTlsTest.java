@@ -48,7 +48,9 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(properties = {
         "oj.rpc.token=",
         // the tls profile configures management SSL, which needs a separate management port
-        "management.server.port=0"})
+        "management.server.port=0",
+        // the tls profile sets minio.ssl-bundle, which requires an https endpoint (no MinIO is contacted here)
+        "minio.endpoint=https://localhost:9000"})
 @ActiveProfiles({"test", "tls"})
 class GrpcMutualTlsTest {
 

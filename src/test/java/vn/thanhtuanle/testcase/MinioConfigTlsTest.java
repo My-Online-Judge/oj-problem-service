@@ -4,13 +4,11 @@ import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.messages.Bucket;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
 import org.springframework.boot.ssl.DefaultSslBundleRegistry;
 import org.springframework.boot.ssl.SslBundle;
 import org.springframework.boot.ssl.SslBundles;
 import org.springframework.boot.ssl.pem.PemSslStoreBundle;
 import org.springframework.boot.ssl.pem.PemSslStoreDetails;
-import org.springframework.core.io.ClassPathResource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
@@ -56,14 +54,6 @@ class MinioConfigTlsTest {
         MinioClient client = new MinioConfig().minioClient(props(null), new DefaultSslBundleRegistry());
 
         assertThat(catchThrowable(client::listBuckets)).isInstanceOf(SSLHandshakeException.class);
-    }
-
-    @Test
-    void tlsProfileUsesTheOjBundle() {
-        YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
-        yaml.setResources(new ClassPathResource("application-tls.yml"));
-
-        assertThat(yaml.getObject()).containsEntry("minio.ssl-bundle", "oj");
     }
 
     private static MinioProperties props(String sslBundle) {

@@ -51,7 +51,9 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "management.server.port=0",
-        "oj.tls.allowed-clients=api-gateway"})
+        "oj.tls.allowed-clients=api-gateway",
+        // the tls profile sets minio.ssl-bundle, which requires an https endpoint (no MinIO is contacted here)
+        "minio.endpoint=https://localhost:9000"})
 @ActiveProfiles({"test", "tls"})
 class MutualTlsServerTest {
 
