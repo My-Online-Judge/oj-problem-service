@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
+import vn.thanhtuanle.problem.dto.TestCaseSummary;
 import vn.thanhtuanle.testcase.InMemoryTestCaseSourceStore;
 import vn.thanhtuanle.testcase.TestCaseBundlePublisher;
 
@@ -63,12 +64,42 @@ class TestCaseServicePublishTest {
         Problem problem = problemWith(1);
         when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
 
-        service.addTestCase("a-plus-b", file("input", "2 3\n"), file("output", "5\n"));
+        TestCaseSummary added = service.addTestCase("a-plus-b", file("input", "2 3\n"), file("output", "5\n"));
+
+        assertThat(added.name()).isEqualTo("2");
+        assertThat(added.sample()).isFalse();
+        assertThat(added.inputSize()).isEqualTo(4);
+        assertThat(added.outputSize()).isEqualTo(2);
+        assertThat(added.inputPreview()).isEqualTo("2 3\n");
+        assertThat(added.outputPreview()).isEqualTo("5\n");
 
         assertThat(new String(sources.files.get("a-plus-b/2.in"), StandardCharsets.UTF_8)).isEqualTo("2 3\n");
         assertThat(new String(sources.files.get("a-plus-b/2.out"), StandardCharsets.UTF_8)).isEqualTo("5\n");
         assertThat(problem.getTestCases()).hasSize(2);
         verify(publisher).publish(problem);
+    }
+
+    @Test
+    void importReturnsSummariesWithSizesAndPreviewsOnly() throws Exception {
+        Problem problem = problemWith(1);
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(bos)) {
+            for (String[] e : new String[][] {{"1.in", "7 8\n"}, {"1.out", "15\n"}}) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(e[0]));
+                zip.write(e[1].getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+
+        List<TestCaseSummary> added = service.importTestCases("a-plus-b",
+                new MockMultipartFile("file", "t.zip", "application/zip", bos.toByteArray()));
+
+        assertThat(added).hasSize(1);
+        assertThat(added.get(0).name()).isEqualTo("2");
+        assertThat(added.get(0).inputSize()).isEqualTo(4);
+        assertThat(added.get(0).inputPreview()).isEqualTo("7 8\n");
+        assertThat(added.get(0).outputPreview()).isEqualTo("15\n");
     }
 
     @Test

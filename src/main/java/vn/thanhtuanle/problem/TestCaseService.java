@@ -131,7 +131,7 @@ public class TestCaseService {
     }
 
     @Transactional
-    public TestCaseResponse addTestCase(String slug, MultipartFile input, MultipartFile output) throws IOException {
+    public TestCaseSummary addTestCase(String slug, MultipartFile input, MultipartFile output) throws IOException {
         log.info("Start add test case for problem: {}", slug);
         validateFile(input, "input");
         validateFile(output, "output");
@@ -147,11 +147,11 @@ public class TestCaseService {
         publisher.publish(problem);
 
         log.info("End add test case for problem: {} as index {}", slug, index);
-        return toResponse(created, inBytes, outBytes);
+        return toSummary(created, headOf(inBytes), headOf(outBytes));
     }
 
     @Transactional
-    public List<TestCaseResponse> importTestCases(String slug, MultipartFile zipFile) throws IOException {
+    public List<TestCaseSummary> importTestCases(String slug, MultipartFile zipFile) throws IOException {
         log.info("Start import test cases for problem: {}", slug);
         if (zipFile == null || zipFile.isEmpty()) {
             throw new IllegalArgumentException("Zip file cannot be empty");
@@ -193,9 +193,9 @@ public class TestCaseService {
         problemRepository.saveAndFlush(problem); // a constraint failure surfaces before CURRENT moves
         publisher.publish(problem);
 
-        List<TestCaseResponse> responses = new ArrayList<>();
+        List<TestCaseSummary> responses = new ArrayList<>();
         for (int i = 0; i < newCases.size(); i++) {
-            responses.add(toResponse(newCases.get(i), newInputs.get(i), newOutputs.get(i)));
+            responses.add(toSummary(newCases.get(i), headOf(newInputs.get(i)), headOf(newOutputs.get(i))));
         }
         log.info("End import test cases for problem: {} (added={})", slug, responses.size());
         return responses;
@@ -228,14 +228,14 @@ public class TestCaseService {
      * and changing the bundle hash would force a needless re-judge.
      */
     @Transactional
-    public TestCaseResponse setSample(String slug, UUID testCaseId, boolean sample) {
+    public TestCaseSummary setSample(String slug, UUID testCaseId, boolean sample) {
         log.info("Start set sample={} for test case {} of problem: {}", sample, testCaseId, slug);
         TestCase tc = getOwnedTestCaseOrThrow(slug, testCaseId);
 
         tc.setSample(sample);
         testCaseRepository.save(tc);
         log.info("End set sample={} for test case {} of problem: {}", sample, testCaseId, slug);
-        return toResponse(tc);
+        return toSummary(tc, headQuietly(tc.getInput()), headQuietly(tc.getOutput()));
     }
 
     // --- persistence / IO helpers -------------------------------------------------------------
@@ -368,16 +368,6 @@ public class TestCaseService {
                 .name(baseNameOf(tc.getInput()))
                 .input(readContentQuietly(tc.getInput()))
                 .output(readContentQuietly(tc.getOutput()))
-                .sample(tc.isSample())
-                .build();
-    }
-
-    private static TestCaseResponse toResponse(TestCase tc, byte[] inBytes, byte[] outBytes) {
-        return TestCaseResponse.builder()
-                .id(tc.getId())
-                .name(baseNameOf(tc.getInput()))
-                .input(new String(inBytes, StandardCharsets.UTF_8))
-                .output(new String(outBytes, StandardCharsets.UTF_8))
                 .sample(tc.isSample())
                 .build();
     }

@@ -10,7 +10,7 @@ import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
-import vn.thanhtuanle.problem.dto.TestCaseResponse;
+import vn.thanhtuanle.problem.dto.TestCaseSummary;
 import vn.thanhtuanle.testcase.TestCaseBundlePublisher;
 import vn.thanhtuanle.testcase.TestCaseSourceStore;
 
@@ -40,11 +40,11 @@ class TestCaseServiceSampleToggleTest {
         tc.setId(id);
         when(testCaseRepository.findById(id)).thenReturn(Optional.of(tc));
 
-        TestCaseResponse response = service.setSample("a-plus-b", id, true);
+        TestCaseSummary response = service.setSample("a-plus-b", id, true);
 
         assertThat(tc.isSample()).isTrue();
-        assertThat(response.getId()).isEqualTo(id);
-        assertThat(response.isSample()).isTrue();
+        assertThat(response.id()).isEqualTo(id);
+        assertThat(response.sample()).isTrue();
         // The bundle hash must not change: no re-judge churn from a visibility toggle.
         verifyNoInteractions(publisher);
     }

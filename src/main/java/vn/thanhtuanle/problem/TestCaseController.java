@@ -68,7 +68,7 @@ public class TestCaseController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Add a single test case (input + output files) to a problem (admin only)")
     @PreAuthorize("hasAuthority('problem:update')")
-    public ApiResponse<TestCaseResponse> addTestCase(
+    public ApiResponse<TestCaseSummary> addTestCase(
             @PathVariable String slug,
             @RequestPart("input") MultipartFile input,
             @RequestPart("output") MultipartFile output) throws IOException {
@@ -79,7 +79,7 @@ public class TestCaseController {
     @PostMapping(path = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Import test cases from a ZIP into a problem, appended after existing (admin only)")
     @PreAuthorize("hasAuthority('problem:update')")
-    public ApiResponse<List<TestCaseResponse>> importTestCases(
+    public ApiResponse<List<TestCaseSummary>> importTestCases(
             @PathVariable String slug,
             @RequestPart(AppProperties.REQUEST_PART_FILE) MultipartFile file) throws IOException {
         log.info("Start import test cases: slug={}", slug);
@@ -100,7 +100,7 @@ public class TestCaseController {
     @PatchMapping("/{testCaseId}")
     @Operation(summary = "Mark a test case as sample (visible) or hidden")
     @PreAuthorize("hasAuthority('problem:update')")
-    public ApiResponse<TestCaseResponse> setSample(
+    public ApiResponse<TestCaseSummary> setSample(
             @PathVariable String slug,
             @PathVariable UUID testCaseId,
             @Valid @RequestBody UpdateTestCaseSampleRequest body) {

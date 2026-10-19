@@ -62,8 +62,8 @@ public class ProblemController {
             @RequestParam(required = false) Integer hardnessLevel,
             @RequestParam(required = false) String tag) {
 
-        log.info("Start get problems: page={}, size={}, search={}, status={}, hardnessLevel={}",
-                page, size, search, status, hardnessLevel);
+        log.info("Start get problems: page={}, size={}, search={}, status={}, hardnessLevel={}, tag={}",
+                page, size, search, status, hardnessLevel, tag);
         return ApiResponse.success(problemService.getProblems(page, size, search, status, hardnessLevel, tag));
     }
 
