@@ -23,6 +23,7 @@ import vn.thanhtuanle.oj.common.grpc.ServiceTokenClientInterceptor;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetJudgeSpecRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetSampleTestCasesRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.JudgeSpec;
+import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.SampleTestCase;
 import vn.thanhtuanle.problem.ProblemRepository;
@@ -33,8 +34,11 @@ import vn.thanhtuanle.testcase.TestCaseSourceStore;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -177,6 +181,40 @@ class ProblemInternalGrpcServiceTest {
                 .setProblemId(UUID.randomUUID().toString()).build()).getCasesList()).isEmpty();
         assertThat(codeOf(() -> stub.getSampleTestCases(GetSampleTestCasesRequest.newBuilder()
                 .setProblemId("not-a-uuid").build()))).isEqualTo(Status.Code.INVALID_ARGUMENT);
+    }
+
+    private List<String> visible(List<String> slugs) {
+        return stub.listVisibleSlugs(ListVisibleSlugsRequest.newBuilder().addAllSlugs(slugs).build()).getSlugsList();
+    }
+
+    @Test
+    void listVisibleSlugsKeepsOnlyActiveProblems() {
+        Problem active = problem(ProblemStatus.ACTIVE);
+        Problem otherActive = problem(ProblemStatus.ACTIVE);
+        Problem inactive = problem(ProblemStatus.INACTIVE);
+        Problem deleted = problem(ProblemStatus.DELETED);
+
+        assertThat(visible(List.of(active.getProblemSlug(), inactive.getProblemSlug(), "no-such-slug",
+                deleted.getProblemSlug(), otherActive.getProblemSlug(), active.getProblemSlug())))
+                .containsExactlyInAnyOrder(active.getProblemSlug(), otherActive.getProblemSlug());
+    }
+
+    @Test
+    void listVisibleSlugsOfNothingIsNothing() {
+        assertThat(visible(List.of())).isEmpty();
+    }
+
+    @Test
+    void listVisibleSlugsRefusesMoreThan100() {
+        Problem active = problem(ProblemStatus.ACTIVE);
+        List<String> hundred = IntStream.range(0, 99).mapToObj(i -> "unknown-" + i)
+                .collect(Collectors.toCollection(ArrayList::new));
+        hundred.add(active.getProblemSlug());
+
+        assertThat(visible(hundred)).containsExactly(active.getProblemSlug());
+        List<String> hundredAndOne = new ArrayList<>(hundred);
+        hundredAndOne.add("one-too-many");
+        assertThat(codeOf(() -> visible(hundredAndOne))).isEqualTo(Status.Code.INVALID_ARGUMENT);
     }
 
     @Test

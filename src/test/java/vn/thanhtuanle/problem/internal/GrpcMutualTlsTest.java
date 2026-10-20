@@ -21,6 +21,7 @@ import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetJudgeSpecRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.JudgeSpec;
+import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
 import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.testcase.TestCaseBundleStore;
@@ -37,6 +38,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 /**
@@ -119,6 +121,28 @@ class GrpcMutualTlsTest {
             assertThat(spec.getTestCaseVersion()).isEqualTo("f7837fd99ca5");
         } finally {
             channel.shutdownNow();
+        }
+    }
+
+    @Test
+    void listVisibleSlugsAnswersTheSameClientsOnly() throws IOException {
+        String slug = "mtls-" + UUID.randomUUID();
+        problems.save(Problem.builder().title("mtls").problemSlug(slug).status(ProblemStatus.ACTIVE.getValue())
+                .timeLimit(1000).memoryLimit(256L).testCases(new ArrayList<>()).build());
+        ListVisibleSlugsRequest request = ListVisibleSlugsRequest.newBuilder().addSlugs(slug).build();
+
+        ManagedChannel submission = channel("submission-service");
+        ManagedChannel probe = channel("tls-probe");
+        try {
+            assertThat(ProblemInternalGrpc.newBlockingStub(submission).withDeadlineAfter(10, TimeUnit.SECONDS)
+                    .listVisibleSlugs(request).getSlugsList()).containsExactly(slug);
+            assertThatThrownBy(() -> ProblemInternalGrpc.newBlockingStub(probe).withDeadlineAfter(10, TimeUnit.SECONDS)
+                    .listVisibleSlugs(request))
+                    .isInstanceOfSatisfying(StatusRuntimeException.class,
+                            e -> assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED));
+        } finally {
+            submission.shutdownNow();
+            probe.shutdownNow();
         }
     }
 

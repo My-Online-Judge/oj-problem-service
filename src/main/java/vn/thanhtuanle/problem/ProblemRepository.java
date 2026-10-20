@@ -52,6 +52,10 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
     @Query("SELECT p.problemSlug FROM Problem p WHERE p.status <> 2") // 2 = ProblemStatus.DELETED
     List<String> findLiveSlugs();
 
+    /** Those of these slugs whose problem is ACTIVE (status 1), in no particular order. */
+    @Query("SELECT p.problemSlug FROM Problem p WHERE p.problemSlug IN :slugs AND p.status = 1")
+    List<String> findActiveSlugsIn(@Param("slugs") Collection<String> slugs);
+
     /**
      * The WHERE of {@link #findProblemsWithStats}, shared by the page query and its count so they cannot drift.
      * Status 2 = DELETED (never listed); status 1 = ACTIVE, the only status a caller without

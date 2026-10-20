@@ -8,6 +8,7 @@ import vn.thanhtuanle.oj.common.text.TextCaps;
 import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.problem.TestCaseService;
 
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +36,12 @@ public class InternalProblemQueries {
         return problemRepository.findLiveBySlug(slug)
                 .map(p -> new ProblemLimits(p.getId(), p.getProblemSlug(), p.getTimeLimit(), p.getMemoryLimit(),
                         p.getStatus() == ProblemStatus.ACTIVE.getValue()));
+    }
+
+    /** Those of these slugs anyone may see (ACTIVE), in one query: unknown, INACTIVE and deleted ones drop out. */
+    @Transactional(readOnly = true)
+    public List<String> visibleSlugs(Collection<String> slugs) {
+        return slugs.isEmpty() ? List.of() : problemRepository.findActiveSlugsIn(slugs);
     }
 
     /**

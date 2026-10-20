@@ -10,6 +10,8 @@ import vn.thanhtuanle.oj.common.grpc.ProblemRpcReasons;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetJudgeSpecRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetSampleTestCasesRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.JudgeSpec;
+import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsRequest;
+import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsResponse;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.SampleTestCase;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.SampleTestCases;
@@ -29,6 +31,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInternalImplBase {
+
+    /** The most slugs one ListVisibleSlugs call may ask about. */
+    static final int MAX_VISIBLE_SLUGS = 100;
 
     private final InternalProblemQueries queries;
     private final TestCaseBundleStore bundleStore;
@@ -92,6 +97,19 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
         queries.sampleCases(problemId).forEach(c -> cases.addCases(SampleTestCase.newBuilder()
                 .setName(c.name()).setInput(c.input()).setExpectedOutput(c.expectedOutput())));
         responseObserver.onNext(cases.build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void listVisibleSlugs(ListVisibleSlugsRequest request,
+                                 StreamObserver<ListVisibleSlugsResponse> responseObserver) {
+        if (request.getSlugsCount() > MAX_VISIBLE_SLUGS) {
+            responseObserver.onError(Status.INVALID_ARGUMENT
+                    .withDescription("At most " + MAX_VISIBLE_SLUGS + " slugs per call").asRuntimeException());
+            return;
+        }
+        responseObserver.onNext(ListVisibleSlugsResponse.newBuilder()
+                .addAllSlugs(queries.visibleSlugs(request.getSlugsList())).build());
         responseObserver.onCompleted();
     }
 }
