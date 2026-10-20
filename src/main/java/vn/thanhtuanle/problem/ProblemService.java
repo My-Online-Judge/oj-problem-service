@@ -208,6 +208,7 @@ public class ProblemService {
         }
 
         ProblemResponseDto dto = problemMapper.toDto(projection);
+        attachTags(List.of(dto));
 
         List<ProblemStatisticsInfo> rawStats = problemRepository.countSubmissionsByResult(projection.getId());
 

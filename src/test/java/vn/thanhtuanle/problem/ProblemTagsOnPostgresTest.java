@@ -159,6 +159,23 @@ class ProblemTagsOnPostgresTest extends PostgresTest {
     }
 
     @Test
+    void detailCarriesTags() throws Exception {
+        String slug = P + UUID.randomUUID();
+        service.createProblem(dto(slug, List.of("dp", "graph")), zip());
+        assertThat(service.getProblemBySlug(slug, true).getTags()).containsExactlyInAnyOrder("dp", "graph");
+    }
+
+    @Test
+    void detailThenUpdateWithItsOwnTagsKeepsThem() throws Exception {
+        String slug = P + UUID.randomUUID();
+        service.createProblem(dto(slug, List.of("dp", "graph")), zip());
+        // what the admin edit form does: prefill from the detail, send the same tags back
+        List<String> prefilled = service.getProblemBySlug(slug, true).getTags();
+        service.updateProblem(slug, update(prefilled));
+        assertThat(tagsInDb(slug)).containsExactly("dp", "graph");
+    }
+
+    @Test
     void reservedSlugRejected() {
         assertThatThrownBy(() -> service.createProblem(dto("TAGS", List.of()), zip()))
                 .isInstanceOf(IllegalArgumentException.class)
