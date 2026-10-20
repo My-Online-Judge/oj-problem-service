@@ -2,6 +2,8 @@ package vn.thanhtuanle.contest;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,7 @@ public class ContestService {
 
     static final int MAX_PROBLEMS = 26;
     static final int PAST_LIMIT = 50;
+    private static final String SLUG_INDEX = "ux_contests_slug";
 
     private final ContestRepository contests;
     private final ContestProblemRepository contestProblems;
@@ -90,7 +93,7 @@ public class ContestService {
         requireWindow(r);
         List<Problem> chosen = resolveProblems(r.problemSlugs());
         if (contests.existsBySlug(r.slug())) {
-            throw new ResourceAlreadyExistException("Contest slug already exists: " + r.slug());
+            throw slugTaken(r.slug());
         }
         Contest contest = Contest.builder()
                 .slug(r.slug())
@@ -101,7 +104,7 @@ public class ContestService {
                 .status(r.status())
                 .build();
         setProblems(contest, chosen);
-        contests.save(contest);
+        claimSlug(contest);
         return toDetail(contest, true, Optional.empty());
     }
 
@@ -173,6 +176,26 @@ public class ContestService {
         return contests.findBySlugContaining(contestSlug, problemSlug)
                 .filter(c -> c.getStatus() == ContestStatus.PUBLISHED && phase(c, now) == ContestPhase.RUNNING)
                 .map(Contest::getId);
+    }
+
+    /**
+     * Inserts the new contest now: a concurrent create of the same slug passed existsBySlug too, and only the unique
+     * index tells the loser, who is refused like a taken slug instead of failing at commit.
+     */
+    private void claimSlug(Contest contest) {
+        try {
+            contests.saveAndFlush(contest);
+        } catch (DataIntegrityViolationException e) {
+            if (e.getCause() instanceof ConstraintViolationException violation
+                    && SLUG_INDEX.equals(violation.getConstraintName())) {
+                throw slugTaken(contest.getSlug());
+            }
+            throw e;
+        }
+    }
+
+    private static ResourceAlreadyExistException slugTaken(String slug) {
+        return new ResourceAlreadyExistException("Contest slug already exists: " + slug);
     }
 
     private Contest find(String slug) {
