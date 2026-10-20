@@ -103,7 +103,7 @@ class ProblemInternalGrpcServiceTest {
 
     @Test
     void theJudgeSpecCarriesTheLimitsAndTheCurrentBundle() {
-        Problem p = problem(ProblemStatus.INACTIVE);   // inactive problems stay submittable
+        Problem p = problem(ProblemStatus.ACTIVE);
         when(bundleStore.findCurrentVersion(p.getProblemSlug())).thenReturn(Optional.of("f7837fd99ca5"));
 
         JudgeSpec spec = stub.getJudgeSpec(GetJudgeSpecRequest.newBuilder().setProblemSlug(p.getProblemSlug()).build());
@@ -113,6 +113,21 @@ class ProblemInternalGrpcServiceTest {
         assertThat(spec.getTimeLimitMs()).isEqualTo(1500);
         assertThat(spec.getMemoryLimitMb()).isEqualTo(128L);
         assertThat(spec.getTestCaseVersion()).isEqualTo("f7837fd99ca5");
+    }
+
+    @Test
+    void anInactiveProblemIsNotFoundUnlessAllowed() {
+        Problem p = problem(ProblemStatus.INACTIVE);
+        when(bundleStore.findCurrentVersion(p.getProblemSlug())).thenReturn(Optional.of("abc123"));
+
+        assertThat(codeOf(() -> stub.getJudgeSpec(GetJudgeSpecRequest.newBuilder().setProblemSlug(p.getProblemSlug()).build())))
+                .isEqualTo(Status.Code.NOT_FOUND);
+        assertThat(codeOf(() -> stub.getJudgeSpec(GetJudgeSpecRequest.newBuilder().setProblemSlug(p.getProblemSlug())
+                .setAllowInactive(false).build()))).isEqualTo(Status.Code.NOT_FOUND);
+        JudgeSpec spec = stub.getJudgeSpec(GetJudgeSpecRequest.newBuilder().setProblemSlug(p.getProblemSlug())
+                .setAllowInactive(true).build());
+        assertThat(spec.getProblemSlug()).isEqualTo(p.getProblemSlug());
+        assertThat(spec.getTestCaseVersion()).isEqualTo("abc123");
     }
 
     @Test

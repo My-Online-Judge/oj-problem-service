@@ -166,13 +166,13 @@ public class ProblemService {
     }
 
     public PageResponse<ProblemResponseDto> getProblems(int page, int size, String search, ProblemStatus status,
-            Integer hardnessLevel, String tag) {
+            Integer hardnessLevel, String tag, boolean includeInactive) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(AppProperties.DEFAULT_SORT_BY).descending());
 
         Integer statusValue = status != null ? status.getValue() : null;
         Page<ProblemResponseDto> dtoPage = problemRepository
                 .findProblemsWithStats(search, statusValue, hardnessLevel,
-                        tag == null || tag.isBlank() ? null : tag.trim().toLowerCase(Locale.ROOT), pageable)
+                        tag == null || tag.isBlank() ? null : tag.trim().toLowerCase(Locale.ROOT), includeInactive, pageable)
                 .map(problemMapper::toDto);
 
         attachTags(dtoPage.getContent());
@@ -197,11 +197,14 @@ public class ProblemService {
         problems.forEach(p -> p.setTags(tagsByProblem.getOrDefault(p.getId(), List.of())));
     }
 
-    public ProblemResponseDto getProblemBySlug(String slug) {
+    public ProblemResponseDto getProblemBySlug(String slug, boolean includeInactive) {
         log.info("Start fetch problem details for slug: {}", slug);
         ProblemStatisticProjection projection = problemRepository.findByProblemSlugWithStats(slug)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Problem not found with slug: " + slug));
+        if (projection.getStatus() == ProblemStatus.INACTIVE.getValue() && !includeInactive) {
+            throw new ResourceNotFoundException("Problem not found with slug: " + slug);
+        }
 
         ProblemResponseDto dto = problemMapper.toDto(projection);
 

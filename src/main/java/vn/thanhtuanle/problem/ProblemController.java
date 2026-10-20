@@ -64,7 +64,8 @@ public class ProblemController {
 
         log.info("Start get problems: page={}, size={}, search={}, status={}, hardnessLevel={}, tag={}",
                 page, size, search, status, hardnessLevel, tag);
-        return ApiResponse.success(problemService.getProblems(page, size, search, status, hardnessLevel, tag));
+        return ApiResponse.success(problemService.getProblems(page, size, search, status, hardnessLevel, tag,
+                ProblemAccess.callerMayEdit()));
     }
 
     @GetMapping("/tags")
@@ -77,7 +78,7 @@ public class ProblemController {
     @Operation(summary = "Get problem by slug")
     public ApiResponse<ProblemResponseDto> getProblemBySlug(@PathVariable String slug) {
         log.info("Start get problem by slug: {}", slug);
-        return ApiResponse.success(problemService.getProblemBySlug(slug));
+        return ApiResponse.success(problemService.getProblemBySlug(slug, ProblemAccess.callerMayEdit()));
     }
 
     @PutMapping("/{slug}")

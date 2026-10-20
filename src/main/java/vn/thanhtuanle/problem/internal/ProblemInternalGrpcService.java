@@ -34,7 +34,7 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
     public void getJudgeSpec(GetJudgeSpecRequest request, StreamObserver<JudgeSpec> responseObserver) {
         String slug = request.getProblemSlug();
         Optional<InternalProblemQueries.ProblemLimits> problem = queries.liveProblem(slug);
-        if (problem.isEmpty()) {
+        if (problem.isEmpty() || (!problem.get().active() && !request.getAllowInactive())) {
             responseObserver.onError(Status.NOT_FOUND.withDescription("Problem not found: " + slug).asRuntimeException());
             return;
         }

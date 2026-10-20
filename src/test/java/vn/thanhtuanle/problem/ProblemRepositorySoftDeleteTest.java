@@ -59,11 +59,11 @@ class ProblemRepositorySoftDeleteTest {
         save(marker + "-gone", ProblemStatus.DELETED);
 
         // search matches the title of both; no status filter
-        assertThat(problemRepository.findProblemsWithStats(marker, null, null, null, PageRequest.of(0, 10))
+        assertThat(problemRepository.findProblemsWithStats(marker, null, null, null, true, PageRequest.of(0, 10))
                 .map(ProblemStatisticProjection::getProblemSlug))
                 .containsExactly(marker + "-live");
         // asking for DELETED explicitly still returns nothing
         assertThat(problemRepository.findProblemsWithStats(marker, ProblemStatus.DELETED.getValue(), null, null,
-                PageRequest.of(0, 10))).isEmpty();
+                true, PageRequest.of(0, 10))).isEmpty();
     }
 }

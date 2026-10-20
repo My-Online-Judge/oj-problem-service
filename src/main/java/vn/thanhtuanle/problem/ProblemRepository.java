@@ -52,6 +52,21 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
     @Query("SELECT p.problemSlug FROM Problem p WHERE p.status <> 2") // 2 = ProblemStatus.DELETED
     List<String> findLiveSlugs();
 
+    /**
+     * The WHERE of {@link #findProblemsWithStats}, shared by the page query and its count so they cannot drift.
+     * Status 2 = DELETED (never listed); status 1 = ACTIVE, the only status a caller without
+     * {@code includeInactive} may see.
+     */
+    String PROBLEM_FILTER = """
+            WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
+                   OR p.description ILIKE CONCAT('%', :search, '%'))
+              AND (:status IS NULL OR p.status = :status)
+              AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
+              AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))
+              AND p.status <> 2 /* ProblemStatus.DELETED */
+              AND (:includeInactive = TRUE OR p.status = 1 /* ProblemStatus.ACTIVE */)
+            """;
+
     /** Every live problem with its submission totals (terminal verdicts only, from t_problem_stats). */
     @Query(value = """
             SELECT
@@ -61,23 +76,9 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
             FROM t_problems p
             LEFT JOIN (""" + STATS_BY_PROBLEM + """
             ) st ON st.problem_id = p.id
-            WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
-                   OR p.description ILIKE CONCAT('%', :search, '%'))
-              AND (:status IS NULL OR p.status = :status)
-              AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
-              AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))
-              AND p.status <> 2 /* ProblemStatus.DELETED */
-            """, countQuery = """
-            SELECT count(*) FROM t_problems p
-            WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
-                   OR p.description ILIKE CONCAT('%', :search, '%'))
-              AND (:status IS NULL OR p.status = :status)
-              AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
-              AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))
-              AND p.status <> 2 /* ProblemStatus.DELETED */
-            """, nativeQuery = true)
+            """ + PROBLEM_FILTER, countQuery = "SELECT count(*) FROM t_problems p " + PROBLEM_FILTER, nativeQuery = true)
     Page<ProblemStatisticProjection> findProblemsWithStats(String search, Integer status, Integer hardnessLevel,
-            String tag, Pageable pageable);
+            String tag, boolean includeInactive, Pageable pageable);
 
     /** Tag vocabulary over active problems (ProblemStatus.ACTIVE = 1): most used first, then alphabetical. */
     @Query(value = """

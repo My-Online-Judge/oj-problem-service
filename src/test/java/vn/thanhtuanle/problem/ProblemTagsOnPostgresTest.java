@@ -146,8 +146,8 @@ class ProblemTagsOnPostgresTest extends PostgresTest {
                 insertProblem(P + "f" + i, 1, "needle");
             }
         }
-        var first = service.getProblems(0, 10, "needle", null, null, "ZZ-DP");
-        var second = service.getProblems(1, 10, "needle", null, null, "zz-dp");
+        var first = service.getProblems(0, 10, "needle", null, null, "ZZ-DP", true);
+        var second = service.getProblems(1, 10, "needle", null, null, "zz-dp", true);
 
         assertThat(first.getTotalElements()).isEqualTo(12);
         assertThat(first.getTotalPages()).isEqualTo(2);
@@ -155,7 +155,7 @@ class ProblemTagsOnPostgresTest extends PostgresTest {
         assertThat(second.getData()).hasSize(2);
         assertThat(first.getData()).allSatisfy(p -> assertThat(p.getTags()).containsExactly("zz-dp"));
         // search that only matches the description counts the same rows in page and count
-        assertThat(service.getProblems(0, 10, "needle", null, null, null).getTotalElements()).isEqualTo(25);
+        assertThat(service.getProblems(0, 10, "needle", null, null, null, true).getTotalElements()).isEqualTo(25);
     }
 
     @Test

@@ -61,7 +61,7 @@ class ProblemServiceTest {
 
         Page<ProblemStatisticProjection> page =
                 new PageImpl<>(List.of(proj1, proj2), PageRequest.of(0, 10), 2);
-        when(problemRepository.findProblemsWithStats(eq("gcd"), eq(1), eq(2), isNull(), any(Pageable.class)))
+        when(problemRepository.findProblemsWithStats(eq("gcd"), eq(1), eq(2), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(page);
         when(problemMapper.toDto(proj1)).thenReturn(dto1);
         when(problemMapper.toDto(proj2)).thenReturn(dto2);
@@ -69,9 +69,9 @@ class ProblemServiceTest {
                 .thenReturn(List.of(tagRow(id1, "Math"), tagRow(id1, "Greedy")));
 
         PageResponse<ProblemResponseDto> result =
-                problemService.getProblems(0, 10, "gcd", ProblemStatus.ACTIVE, 2, null);
+                problemService.getProblems(0, 10, "gcd", ProblemStatus.ACTIVE, 2, null, false);
 
-        verify(problemRepository).findProblemsWithStats(eq("gcd"), eq(1), eq(2), isNull(), any(Pageable.class));
+        verify(problemRepository).findProblemsWithStats(eq("gcd"), eq(1), eq(2), isNull(), eq(false), any(Pageable.class));
         assertEquals(List.of("Math", "Greedy"), result.getData().get(0).getTags());
         assertTrue(result.getData().get(1).getTags().isEmpty());
     }
@@ -80,11 +80,11 @@ class ProblemServiceTest {
     void getProblems_emptyPage_doesNotQueryTags() {
         Page<ProblemStatisticProjection> empty =
                 new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
-        when(problemRepository.findProblemsWithStats(isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+        when(problemRepository.findProblemsWithStats(isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(empty);
 
         PageResponse<ProblemResponseDto> result =
-                problemService.getProblems(0, 10, null, null, null, null);
+                problemService.getProblems(0, 10, null, null, null, null, false);
 
         assertTrue(result.getData().isEmpty());
         verify(problemRepository, never()).findTagsByProblemIds(anyList());

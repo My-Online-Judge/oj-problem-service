@@ -3,6 +3,7 @@ package vn.thanhtuanle.problem.internal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.oj.common.text.TextCaps;
 import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.problem.TestCaseService;
@@ -20,8 +21,8 @@ public class InternalProblemQueries {
     private final ProblemRepository problemRepository;
     private final TestCaseService testCaseService;
 
-    /** A problem's identity and limits, as the judge needs them. */
-    public record ProblemLimits(UUID id, String slug, int timeLimitMs, long memoryLimitMb) {
+    /** A problem's identity and limits, as the judge needs them; {@code active} is false for an INACTIVE problem. */
+    public record ProblemLimits(UUID id, String slug, int timeLimitMs, long memoryLimitMb, boolean active) {
     }
 
     /** A test case users may see; {@code name} is the judge's name for it (the file stem). */
@@ -32,7 +33,8 @@ public class InternalProblemQueries {
     @Transactional(readOnly = true)
     public Optional<ProblemLimits> liveProblem(String slug) {
         return problemRepository.findLiveBySlug(slug)
-                .map(p -> new ProblemLimits(p.getId(), p.getProblemSlug(), p.getTimeLimit(), p.getMemoryLimit()));
+                .map(p -> new ProblemLimits(p.getId(), p.getProblemSlug(), p.getTimeLimit(), p.getMemoryLimit(),
+                        p.getStatus() == ProblemStatus.ACTIVE.getValue()));
     }
 
     /**
