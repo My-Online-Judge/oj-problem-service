@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import vn.thanhtuanle.common.constant.AppProperties;
 import vn.thanhtuanle.oj.common.web.payload.PageResponse;
+import vn.thanhtuanle.oj.common.web.payload.PageSizes;
 import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.common.enums.SubmissionResult;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
@@ -167,7 +168,7 @@ public class ProblemService {
 
     public PageResponse<ProblemResponseDto> getProblems(int page, int size, String search, ProblemStatus status,
             Integer hardnessLevel, String tag, boolean includeInactive) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(AppProperties.DEFAULT_SORT_BY).descending());
+        Pageable pageable = PageRequest.of(page, PageSizes.cap(size), Sort.by(AppProperties.DEFAULT_SORT_BY).descending());
 
         Integer statusValue = status != null ? status.getValue() : null;
         Page<ProblemResponseDto> dtoPage = problemRepository
