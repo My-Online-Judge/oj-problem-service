@@ -141,6 +141,25 @@ class ContestScoreRecorderTest extends PostgresTest {
         assertThat(row(k)).isEqualTo(score(k, 1, at(4)));
     }
 
+    /**
+     * A contest postponed while its first submissions still waited for a verdict (Task 13 review I1): what was
+     * submitted before the new start counts neither as a try nor as the AC, so no minute can be negative. A contestant
+     * with only such verdicts has no row.
+     */
+    @Test
+    void verdictsSubmittedBeforeAPostponedStartDoNotCount() {
+        Key k = key();
+        jdbc.update("UPDATE t_contests SET starts_at = ? WHERE id = ?", at(60).atOffset(ZoneOffset.UTC), k.contestId());
+
+        recorder.record(k.verdict(UUID.randomUUID(), WA, 0));
+        recorder.record(k.verdict(UUID.randomUUID(), AC, 1));
+        assertThat(row(k)).isNull();
+
+        recorder.record(k.verdict(UUID.randomUUID(), WA, 70));
+        recorder.record(k.verdict(UUID.randomUUID(), AC, 80));
+        assertThat(row(k)).isEqualTo(score(k, 1, at(80)));
+    }
+
     @Test
     void attemptsAfterTheFirstAcDoNotCount() {
         Key k = key();

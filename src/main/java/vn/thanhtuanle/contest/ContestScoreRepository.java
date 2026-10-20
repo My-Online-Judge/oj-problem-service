@@ -23,9 +23,14 @@ public class ContestScoreRepository {
 
     /**
      * Over the contestant's verdicts on the problem ({@code t_processed_verdicts}, each with its current
-     * {@code last_status}): {@code accepted_at} is the earliest submit time of an accepted one, or null;
-     * {@code attempts_before_ac} counts the others submitted before it (all of them while there is none), compile
-     * errors (-2) and system errors (5) left out.
+     * {@code last_status}) submitted at or after the contest's start: {@code accepted_at} is the earliest submit time of
+     * an accepted one, or null; {@code attempts_before_ac} counts the others submitted before it (all of them while
+     * there is none), compile errors (-2) and system errors (5) left out.
+     * <p>
+     * The lower bound matters for a contest postponed while its first submissions still waited for a verdict (Task 13
+     * review I1): those count neither as tries nor as the AC, so no minute is ever negative, and a contestant with only
+     * such verdicts gets no row. The start cannot move once a row exists (Task 12 M1), and the caller holds the contest
+     * row lock, so no row is computed against a start that later changes. There is no upper bound (Task 12 ruling).
      */
     private static final String RECOMPUTE = """
             INSERT INTO t_contest_scores (contest_id, user_id, problem_id, attempts_before_ac, accepted_at)
@@ -34,8 +39,10 @@ public class ContestScoreRepository {
                    f.first_ac
             FROM t_processed_verdicts v
             CROSS JOIN (SELECT min(submitted_at) AS first_ac FROM t_processed_verdicts
-                        WHERE contest_id = :contestId AND user_id = :userId AND problem_id = :problemId AND last_status = 0) f
+                        WHERE contest_id = :contestId AND user_id = :userId AND problem_id = :problemId AND last_status = 0
+                          AND submitted_at >= (SELECT starts_at FROM t_contests WHERE id = :contestId)) f
             WHERE v.contest_id = :contestId AND v.user_id = :userId AND v.problem_id = :problemId
+              AND v.submitted_at >= (SELECT starts_at FROM t_contests WHERE id = :contestId)
             GROUP BY f.first_ac
             ON CONFLICT (contest_id, user_id, problem_id)
             DO UPDATE SET attempts_before_ac = EXCLUDED.attempts_before_ac, accepted_at = EXCLUDED.accepted_at""";

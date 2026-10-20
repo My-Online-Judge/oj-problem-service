@@ -159,8 +159,8 @@ class ScoreboardServiceTest extends PostgresTest {
         String p1 = problem(), p2 = problem();
         String slug = contest(ContestStatus.PUBLISHED, p1, p2);
         UUID tester = UUID.randomUUID();
-        // Not reachable through the API (scores lock the start, and the judge takes no submission before it), so
-        // inserted by hand to pin the rule.
+        // Not reachable through the API (the recompute leaves out what was submitted before the start, Task 13 review
+        // I1), so inserted by hand to pin the rule. Its minutes are clamped at 0, never negative.
         score(slug, tester, p1, 0, T.minus(Duration.ofMinutes(30)));
         em.clear();
 
@@ -169,7 +169,9 @@ class ScoreboardServiceTest extends PostgresTest {
         assertThat(anyone.labels()).containsExactly("A", "B");
         assertThat(anyone.rows()).isEmpty();
         verifyNoInteractions(users);
-        assertThat(scoreboards.scoreboard(slug, true).rows()).extracting(r -> r.user().id()).containsExactly(tester);
+        assertThat(scoreboards.scoreboard(slug, true).rows())
+                .extracting(r -> r.user().id(), ScoreboardRow::penalty, ScoreboardRow::problems)
+                .containsExactly(tuple(tester, 0L, Map.of("A", new ProblemCell(true, 1, 0L))));
     }
 
     @Test

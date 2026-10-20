@@ -17,10 +17,10 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * The ICPC ranking, a pure function of the score rows. A solved cell's minutes are the whole minutes (floored) from
- * the contest's start to the first accepted submit; the penalty is the sum over solved cells of those minutes plus 20
- * per wrong try before the accepted one. Contestants rank by solved count descending, then penalty ascending; equal
- * solved and penalty share a rank. There is no freeze.
+ * The ICPC ranking, a pure function of the score rows. A solved cell's minutes are the whole minutes (floored, and
+ * never below 0) from the contest's start to the first accepted submit; the penalty is the sum over solved cells of
+ * those minutes plus 20 per wrong try before the accepted one. Contestants rank by solved count descending, then
+ * penalty ascending; equal solved and penalty share a rank. There is no freeze.
  */
 public final class Scoreboard {
 
@@ -52,7 +52,9 @@ public final class Scoreboard {
             if (label == null || (!solved && row.attemptsBeforeAc() == 0)) {
                 continue;
             }
-            Long minutes = solved ? Duration.between(startsAt, row.acceptedAt()).toMinutes() : null;
+            // Never below 0: the recompute leaves out what was submitted before the start (Task 13 review I1), and
+            // this keeps a row from before it, should one exist, from ranking first with a negative penalty.
+            Long minutes = solved ? Math.max(0L, Duration.between(startsAt, row.acceptedAt()).toMinutes()) : null;
             cellsByUser.computeIfAbsent(row.userId(), u -> new TreeMap<>())
                     .put(label, new ProblemCell(solved, row.attemptsBeforeAc() + (solved ? 1 : 0), minutes));
         }

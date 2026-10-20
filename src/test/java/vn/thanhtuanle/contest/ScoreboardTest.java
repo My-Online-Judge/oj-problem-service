@@ -160,4 +160,20 @@ class ScoreboardTest {
                 new ScoreboardUser(unknown.get(1), null, null));
         assertThat(board).extracting(ScoreboardRow::rank).containsOnly(1);
     }
+
+    /**
+     * A score row accepted before the start (a contest postponed while its first submissions waited for a verdict,
+     * Task 13 review I1; the recompute leaves such submissions out, this is the second line of defence) is 0 minutes,
+     * never negative.
+     */
+    @Test
+    void acceptedBeforeTheStartIsNeverNegative() {
+        UUID early = user(), onTime = user();
+
+        List<ScoreboardRow> board = rank(row(early, PA, 1, at("09:30:00")), row(onTime, PA, 0, at("10:05:00")));
+
+        assertThat(board).extracting(r -> r.user().id(), ScoreboardRow::rank, ScoreboardRow::penalty)
+                .containsExactly(tuple(onTime, 1, 5L), tuple(early, 2, 20L));
+        assertThat(board.get(1).problems()).isEqualTo(Map.of("A", new ProblemCell(true, 2, 0L)));
+    }
 }
