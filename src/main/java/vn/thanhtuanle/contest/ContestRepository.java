@@ -1,8 +1,10 @@
 package vn.thanhtuanle.contest;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +19,14 @@ public interface ContestRepository extends JpaRepository<Contest, UUID> {
     /** The contest with its problems, each with its problem row, in one query. */
     @EntityGraph(attributePaths = {"problems", "problems.problem"})
     Optional<Contest> findBySlug(String slug);
+
+    /**
+     * The contest with this slug, row-locked until the transaction ends: concurrent changes of one contest run one
+     * after the other, and each decides on what the one before committed. Its problems load lazily.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Contest c WHERE c.slug = :slug")
+    Optional<Contest> findBySlugForUpdate(@Param("slug") String slug);
 
     boolean existsBySlug(String slug);
 

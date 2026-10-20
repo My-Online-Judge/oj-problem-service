@@ -126,7 +126,7 @@ public class ContestService {
     @Transactional
     public ContestDetail update(String slug, ContestRequest r, boolean problemEditor) {
         log.info("Start update contest: {}", slug);
-        Contest contest = find(slug);
+        Contest contest = findForUpdate(slug);
         Instant startsAt = seconds(r.startsAt());
         Instant endsAt = seconds(r.endsAt());
         boolean problemsChange = !slugsOf(contest).equals(r.problemSlugs());
@@ -155,7 +155,7 @@ public class ContestService {
     @Transactional
     public void delete(String slug) {
         log.info("Start delete contest: {}", slug);
-        Contest contest = find(slug);
+        Contest contest = findForUpdate(slug);
         if (started(contest)) {
             throw new AppException(ErrorCode.CONTEST_STARTED);
         }
@@ -214,6 +214,11 @@ public class ContestService {
 
     private Contest find(String slug) {
         return contests.findBySlug(slug).orElseThrow(() -> notFound(slug));
+    }
+
+    /** For a change: the row stays locked until the transaction ends, so two changes of one contest serialise. */
+    private Contest findForUpdate(String slug) {
+        return contests.findBySlugForUpdate(slug).orElseThrow(() -> notFound(slug));
     }
 
     private Contest visible(String slug, boolean editor) {
