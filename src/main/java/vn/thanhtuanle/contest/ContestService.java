@@ -25,6 +25,7 @@ import vn.thanhtuanle.problem.dto.ProblemResponseDto;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -94,10 +95,13 @@ public class ContestService {
         return toDetail(contest, editor, editor && problemEditor, viewer);
     }
 
+    /** Times are stored at whole seconds (see {@link #seconds}). */
     @Transactional
     public ContestDetail create(ContestRequest r, boolean problemEditor) {
         log.info("Start create contest: {}", r.slug());
-        requireWindow(r);
+        Instant startsAt = seconds(r.startsAt());
+        Instant endsAt = seconds(r.endsAt());
+        requireWindow(startsAt, endsAt);
         List<Problem> chosen = resolveProblems(r.problemSlugs(), problemEditor);
         if (contests.existsBySlug(r.slug())) {
             throw slugTaken(r.slug());
@@ -106,8 +110,8 @@ public class ContestService {
                 .slug(r.slug())
                 .title(r.title())
                 .description(r.description())
-                .startsAt(r.startsAt())
-                .endsAt(r.endsAt())
+                .startsAt(startsAt)
+                .endsAt(endsAt)
                 .status(r.status())
                 .build();
         setProblems(contest, chosen);
@@ -117,25 +121,27 @@ public class ContestService {
 
     /**
      * Once a PUBLISHED contest has started, its start time and problems are locked (409); its title, description,
-     * end and status may still change.
+     * end and status may still change. The start is compared at whole seconds, as it is stored.
      */
     @Transactional
     public ContestDetail update(String slug, ContestRequest r, boolean problemEditor) {
         log.info("Start update contest: {}", slug);
         Contest contest = find(slug);
+        Instant startsAt = seconds(r.startsAt());
+        Instant endsAt = seconds(r.endsAt());
         boolean problemsChange = !slugsOf(contest).equals(r.problemSlugs());
-        boolean startChanges = !contest.getStartsAt().equals(r.startsAt());
+        boolean startChanges = !seconds(contest.getStartsAt()).equals(startsAt);
         if (started(contest) && (problemsChange || startChanges)) {
             throw new AppException(ErrorCode.CONTEST_STARTED);
         }
-        requireWindow(r);
+        requireWindow(startsAt, endsAt);
         // An unchanged list is not checked again: a problem deleted since must not block the other changes.
         List<Problem> chosen = problemsChange ? resolveProblems(r.problemSlugs(), problemEditor) : null;
 
         contest.setTitle(r.title());
         contest.setDescription(r.description());
-        contest.setStartsAt(r.startsAt());
-        contest.setEndsAt(r.endsAt());
+        contest.setStartsAt(startsAt);
+        contest.setEndsAt(endsAt);
         contest.setStatus(r.status());
         if (chosen != null) {
             contest.getProblems().clear();
@@ -231,8 +237,16 @@ public class ContestService {
         return ContestPhase.of(contest.getStartsAt(), contest.getEndsAt(), now);
     }
 
-    private static void requireWindow(ContestRequest r) {
-        if (!r.endsAt().isAfter(r.startsAt())) {
+    /**
+     * A contest time as stored: whole seconds. Clients round differently (Postgres keeps µs, a JS Date ms, a
+     * datetime-local input minutes), and an edit that sends back the start it was given must not read as a change.
+     */
+    private static Instant seconds(Instant time) {
+        return time.truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    private static void requireWindow(Instant startsAt, Instant endsAt) {
+        if (!endsAt.isAfter(startsAt)) {
             throw new IllegalArgumentException("A contest must end after it starts");
         }
     }

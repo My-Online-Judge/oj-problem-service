@@ -29,6 +29,7 @@ import vn.thanhtuanle.support.PostgresTest;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -520,6 +521,42 @@ class ContestServiceTest extends PostgresTest {
         persisted();
         assertThat(contests.update(slug, withProblems(withStatus(allowed, ContestStatus.DRAFT), p2), true).problems())
                 .extracting(ContestProblemView::problemSlug).containsExactly(p2);
+    }
+
+    /**
+     * Clients round differently (Postgres keeps µs, JS ms, datetime-local minutes), so times are stored at whole
+     * seconds and the started lock compares seconds: echoing either the sent or the stored start is no change.
+     */
+    @Test
+    void subSecondTimesAreStoredAtWholeSecondsAndAnEchoedStartIsNoChange() {
+        String p = problem();
+        String slug = slug("sub-second");
+        Instant sentStart = T.plusNanos(123_456_789);
+        ContestRequest sent = request(slug, sentStart, T.plus(LENGTH).plusMillis(999), ContestStatus.PUBLISHED, List.of(p));
+
+        ContestDetail created = contests.create(sent, true);
+
+        assertThat(created.startsAt()).isEqualTo(T);
+        assertThat(created.endsAt()).isEqualTo(T.plus(LENGTH));
+        persisted();
+        assertThat(jdbc.queryForObject("SELECT starts_at FROM t_contests WHERE slug = ?", OffsetDateTime.class,
+                slug).toInstant()).isEqualTo(T);
+        clock.set(T.plus(Duration.ofHours(1)));
+
+        ContestRequest retitled = new ContestRequest(null, "Retitled", null, sentStart, sent.endsAt(),
+                ContestStatus.PUBLISHED, List.of(p));
+        assertThat(contests.update(slug, retitled, true).title()).isEqualTo("Retitled");
+        persisted();
+        assertThat(contests.update(slug, withStart(retitled, created.startsAt()), true).startsAt()).isEqualTo(T);
+        persisted();
+        assertThatThrownBy(() -> contests.update(slug, withStart(retitled, T.plusSeconds(1)), true))
+                .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
+                .isEqualTo(ErrorCode.CONTEST_STARTED);
+
+        // a window that is empty at whole seconds is refused like any other, not by the database
+        assertThatThrownBy(() -> contests.create(request(slug("empty"), T.plusMillis(100), T.plusMillis(900),
+                ContestStatus.DRAFT, List.of(p)), true))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("A contest must end after it starts");
     }
 
     @Test
