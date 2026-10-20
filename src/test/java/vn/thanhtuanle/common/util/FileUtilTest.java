@@ -86,6 +86,19 @@ class FileUtilTest {
                 .hasMessageContaining("1.in");
     }
 
+    /** Some Windows tools (PowerShell 5.1's Compress-Archive) write backslashes: they are folders too. */
+    @Test
+    void flattensBackslashFolders() throws IOException {
+        byte[] z = zip(new String[] {"pkg\\problem.json", "pkg\\testcases\\1.in"}, new int[] {1, 1});
+
+        assertThat(FileUtil.extractZip(new ByteArrayInputStream(z))).containsOnlyKeys("problem.json", "1.in");
+
+        byte[] mixed = zip(new String[] {"a\\1.in", "b/1.in"}, new int[] {1, 1});
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(mixed)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Duplicate zip entry name: 1.in");
+    }
+
     @Test
     void rejectsParentTraversal() throws IOException {
         byte[] z = zip(new String[] {"../1.in"}, new int[] {1});

@@ -122,6 +122,18 @@ class ProblemPackageImportTest extends PackagingPostgresTest {
     }
 
     @Test
+    void backslashFoldersAreFlattened() throws Exception {
+        String slug = newSlug("imp");
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("pkg\\problem.json", objectMapper.writeValueAsBytes(problemJson(slug)));
+        entries.put("pkg\\testcases\\1.in", utf8("1 2\n"));
+        entries.put("pkg\\testcases\\1.out", utf8("3\n"));
+
+        importZip(zip(entries)).andExpect(status().isCreated());
+        assertThat(sources.files.get(slug + "/1.in")).isEqualTo(utf8("1 2\n"));
+    }
+
+    @Test
     void noTestCasesIs400() throws Exception {
         String slug = newSlug("imp");
         Map<String, byte[]> entries = entries(problemJson(slug));

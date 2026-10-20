@@ -4,7 +4,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -62,7 +61,7 @@ public class FileUtil {
             if (raw.startsWith("/") || raw.startsWith("\\") || hasParentSegment(raw)) {
                 throw new IllegalArgumentException("Unsafe zip entry name: " + raw);
             }
-            String name = new File(raw).getName();
+            String name = fileName(raw);
             if (extracted.containsKey(name)) {
                 throw new IllegalArgumentException("Duplicate zip entry name: " + name);
             }
@@ -84,6 +83,11 @@ public class FileUtil {
             extracted.put(name, bos.toByteArray());
         }
         return extracted;
+    }
+
+    /** The entry's file name: folders end at a slash or, as some Windows tools write them, at a backslash. */
+    private static String fileName(String raw) {
+        return raw.substring(Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\')) + 1);
     }
 
     private static boolean hasParentSegment(String name) {
