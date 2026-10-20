@@ -163,6 +163,18 @@ public class ContestService {
         return problemService.getProblemBySlug(cp.getProblem().getProblemSlug(), true);
     }
 
+    /**
+     * The id of the contest a submission names, when the judge may take it: the contest is PUBLISHED, running now
+     * ([startsAt, endsAt)) and contains the problem. Empty otherwise, an unknown contest included.
+     */
+    @Transactional(readOnly = true)
+    public Optional<UUID> runningContestId(String contestSlug, String problemSlug) {
+        Instant now = clock.instant();
+        return contests.findBySlugContaining(contestSlug, problemSlug)
+                .filter(c -> c.getStatus() == ContestStatus.PUBLISHED && phase(c, now) == ContestPhase.RUNNING)
+                .map(Contest::getId);
+    }
+
     private Contest find(String slug) {
         return contests.findBySlug(slug).orElseThrow(() -> notFound(slug));
     }

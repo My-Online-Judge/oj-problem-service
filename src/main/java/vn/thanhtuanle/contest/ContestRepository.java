@@ -20,6 +20,13 @@ public interface ContestRepository extends JpaRepository<Contest, UUID> {
 
     boolean existsBySlug(String slug);
 
+    /** The contest with this slug if it contains the problem with this slug, without its problems. */
+    @Query("""
+            SELECT c FROM ContestProblem cp JOIN cp.contest c JOIN cp.problem p
+            WHERE c.slug = :contestSlug AND p.problemSlug = :problemSlug""")
+    Optional<Contest> findBySlugContaining(@Param("contestSlug") String contestSlug,
+            @Param("problemSlug") String problemSlug);
+
     /** Contests of these statuses that have not ended at {@code now}: running or upcoming. */
     @Query("SELECT c FROM Contest c WHERE c.status IN :statuses AND c.endsAt > :now")
     List<Contest> findNotEndedAt(@Param("statuses") Collection<ContestStatus> statuses, @Param("now") Instant now);
