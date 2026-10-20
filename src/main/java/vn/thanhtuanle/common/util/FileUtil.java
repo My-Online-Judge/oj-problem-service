@@ -3,6 +3,7 @@ package vn.thanhtuanle.common.util;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.LongConsumer;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
 import java.util.zip.ZipInputStream;
 
 public class FileUtil {
@@ -31,9 +33,18 @@ public class FileUtil {
     /**
      * Reads the zip with hard bounds on entry count, per-entry and total decompressed size, counting bytes as they
      * are inflated so a zip bomb is rejected without being read in full. {@code onRead} sees each chunk read
-     * (a seam for tests).
+     * (a seam for tests). A zip that cannot be read (cut off, an encrypted entry, a malformed header) is the
+     * uploader's fault, so it is an {@link IllegalArgumentException} (400), not a server error.
      */
     static Map<String, byte[]> extractZip(InputStream in, LongConsumer onRead) throws IOException {
+        try {
+            return readZip(in, onRead);
+        } catch (ZipException | EOFException e) {
+            throw new IllegalArgumentException("The upload is not a valid zip file", e);
+        }
+    }
+
+    private static Map<String, byte[]> readZip(InputStream in, LongConsumer onRead) throws IOException {
         Map<String, byte[]> extracted = new HashMap<>();
         long total = 0;
         int entries = 0;

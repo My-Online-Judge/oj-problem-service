@@ -100,6 +100,24 @@ class FileUtilTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** A cut-off upload ends inside an entry's compressed data: a 400, not the catch-all's 500. */
+    @Test
+    void rejectsATruncatedZip() throws IOException {
+        byte[] data = new byte[64 * 1024];
+        new java.util.Random(7).nextBytes(data); // incompressible, so the cut lands in the entry's data
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(bos)) {
+            zos.putNextEntry(new ZipEntry("1.in"));
+            zos.write(data);
+            zos.closeEntry();
+        }
+        byte[] truncated = java.util.Arrays.copyOf(bos.toByteArray(), bos.size() / 2);
+
+        assertThatThrownBy(() -> FileUtil.extractZip(new ByteArrayInputStream(truncated)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The upload is not a valid zip file");
+    }
+
     @Test
     void extractsNormalZip() throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();

@@ -105,6 +105,22 @@ class ProblemPackageImportTest extends PackagingPostgresTest {
         assertThat(storedStatus(slug)).isEqualTo("0");
     }
 
+    /** Cut off inside a test case's data (a cut between entries reads as a shorter zip), or not a zip at all. */
+    @Test
+    void aCorruptOrNonZipUploadIs400() throws Exception {
+        Map<String, byte[]> entries = entries(problemJson(newSlug("imp")));
+        byte[] incompressible = new byte[64 * 1024];
+        new java.util.Random(7).nextBytes(incompressible);
+        entries.put("testcases/1.in", incompressible);
+        byte[] pkg = zip(entries);
+
+        importZip(java.util.Arrays.copyOf(pkg, pkg.length / 2))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The upload is not a valid zip file"));
+        importZip(utf8("this is not a zip"))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test
     void noTestCasesIs400() throws Exception {
         String slug = newSlug("imp");
