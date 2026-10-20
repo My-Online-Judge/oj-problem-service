@@ -97,13 +97,10 @@ class ProblemInternalGrpcContestTest {
         return slug;
     }
 
-    /** A contest from T to T + 3h holding these problems; created while the clock is before T. */
+    /** A contest from T to T + 3h holding these problems. */
     private String contest(ContestStatus status, String... problemSlugs) {
         String slug = "c-grpc-" + UUID.randomUUID().toString().substring(0, 8);
-        Instant now = clock.instant();
-        clock.set(T.minus(Duration.ofHours(1)));
         contestService.create(new ContestRequest(slug, "Contest " + slug, null, T, END, status, List.of(problemSlugs)));
-        clock.set(now);
         return slug;
     }
 
