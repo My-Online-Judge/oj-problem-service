@@ -9,4 +9,5 @@ public class Routes {
 
     public static final String PROBLEMS = BASE_API + "/problems";
     public static final String PROBLEM_TEST_CASES = PROBLEMS + "/{slug}/test-cases";
+    public static final String CONTESTS = BASE_API + "/contests";
 }

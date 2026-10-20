@@ -28,6 +28,9 @@ public class SecurityConfig {
             // Problems are public to read; every mutation is guarded by @PreAuthorize.
             "/api/v1/problems",
             "/api/v1/problems/**",
+            // Contests too: the list and detail are public; mutations and contest problems are guarded by @PreAuthorize.
+            "/api/v1/contests",
+            "/api/v1/contests/**",
             // Observability endpoints for Prometheus scrape + ops (T5-11). Metric/health data
             // only; other actuator endpoints (env, beans, …) stay authenticated.
             "/actuator/prometheus",
