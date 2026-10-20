@@ -20,7 +20,11 @@ import vn.thanhtuanle.oj.common.web.security.OjAuthenticationEntryPoint;
 import vn.thanhtuanle.problem.dto.CreateProblemDto;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -74,15 +78,22 @@ class ProblemPackageControllerSecurityTest {
         verifyNoInteractions(packages);
     }
 
+    /**
+     * The stream waits until the request thread has left the filter chain: both commit Spring Security's headers onto
+     * the one mock response, and its header map is not thread-safe.
+     */
     @Test
     @WithMockUser(authorities = "problem:update")
     void exportSetsTheDownloadHeaders() throws Exception {
         CreateProblemDto problem = CreateProblemDto.builder().problemSlug("two-sum").build();
         when(packages.plan("two-sum")).thenReturn(new ProblemPackageService.PackagePlan(problem, List.of()));
+        CountDownLatch requestThreadDone = new CountDownLatch(1);
+        doAnswer(write -> requestThreadDone.await(10, TimeUnit.SECONDS)).when(packages).write(any(), any());
 
         MvcResult started = mockMvc.perform(get(EXPORT))
                 .andExpect(request().asyncStarted())
                 .andReturn();
+        requestThreadDone.countDown();
         mockMvc.perform(asyncDispatch(started))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"two-sum.zip\""))
