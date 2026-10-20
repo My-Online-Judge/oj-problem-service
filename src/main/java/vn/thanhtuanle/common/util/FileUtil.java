@@ -51,13 +51,15 @@ public class FileUtil {
         byte[] buffer = new byte[8192];
         ZipEntry entry;
         while ((entry = zis.getNextEntry()) != null) {
-            if (entry.isDirectory()) {
+            String raw = entry.getName();
+            // A folder: a name ending in a slash, or in a backslash as .NET Framework tools (PowerShell 5.1's
+            // Compress-Archive) write empty folders. Either way its flattened name is empty.
+            if (entry.isDirectory() || fileName(raw).isEmpty()) {
                 continue;
             }
             if (++entries > MAX_ENTRIES) {
                 throw new IllegalArgumentException("Zip has more than " + MAX_ENTRIES + " entries");
             }
-            String raw = entry.getName();
             if (raw.startsWith("/") || raw.startsWith("\\") || hasParentSegment(raw)) {
                 throw new IllegalArgumentException("Unsafe zip entry name: " + raw);
             }

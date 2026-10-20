@@ -99,6 +99,15 @@ class FileUtilTest {
                 .hasMessageContaining("Duplicate zip entry name: 1.in");
     }
 
+    /** PowerShell 5.1's Compress-Archive writes an empty folder as an entry whose name ends in a backslash. */
+    @Test
+    void skipsFolderEntriesEndingInABackslash() throws IOException {
+        byte[] z = zip(new String[] {"pkg\\empty\\", "pkg\\other\\", "pkg\\testcases\\", "pkg\\testcases\\1.in"},
+                new int[] {0, 0, 0, 1});
+
+        assertThat(FileUtil.extractZip(new ByteArrayInputStream(z))).containsOnlyKeys("1.in");
+    }
+
     @Test
     void rejectsParentTraversal() throws IOException {
         byte[] z = zip(new String[] {"../1.in"}, new int[] {1});
