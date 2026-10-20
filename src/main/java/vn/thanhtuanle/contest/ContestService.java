@@ -127,7 +127,8 @@ public class ContestService {
     /**
      * Once a PUBLISHED contest has started, its start time and problems are locked (409); its title, description,
      * end and status may still change. The start is compared at whole seconds, as it is stored. A request without
-     * problems keeps them as they are.
+     * problems keeps them as they are. A contest that holds an INACTIVE problem decides when that problem goes public,
+     * so without problem:update it is neither published nor moved to start earlier (403).
      */
     @Transactional
     public ContestDetail update(String slug, ContestRequest r, boolean problemEditor) {
@@ -143,6 +144,11 @@ public class ContestService {
         requireWindow(startsAt, endsAt);
         // An unchanged list is not checked again: a problem deleted since must not block the other changes.
         List<Problem> chosen = problemsChange ? resolveProblems(r.problemSlugs(), problemEditor) : null;
+        boolean bringsForward = r.status() == ContestStatus.PUBLISHED
+                && (contest.getStatus() == ContestStatus.DRAFT || startsAt.isBefore(seconds(contest.getStartsAt())));
+        if (!problemEditor && bringsForward && holdsInactive(chosen != null ? chosen : problemsOf(contest))) {
+            throw new AppException(ErrorCode.CONTEST_HOLDS_INACTIVE_PROBLEMS);
+        }
 
         contest.setTitle(r.title());
         contest.setDescription(r.description());
@@ -290,6 +296,14 @@ public class ContestService {
         for (int i = 0; i < chosen.size(); i++) {
             contest.getProblems().add(new ContestProblem(contest, chosen.get(i), (char) ('A' + i), i));
         }
+    }
+
+    private static List<Problem> problemsOf(Contest contest) {
+        return contest.getProblems().stream().map(ContestProblem::getProblem).toList();
+    }
+
+    private static boolean holdsInactive(List<Problem> held) {
+        return held.stream().anyMatch(p -> p.getStatus() == ProblemStatus.INACTIVE.getValue());
     }
 
     private static List<String> slugsOf(Contest contest) {

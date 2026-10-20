@@ -111,6 +111,11 @@ class ContestServiceTest extends PostgresTest {
         return new ContestRequest(r.slug(), r.title(), r.description(), startsAt, r.endsAt(), r.status(), r.problemSlugs());
     }
 
+    /** The same request without a problem list, which keeps the contest's list. */
+    private static ContestRequest withoutProblems(ContestRequest r) {
+        return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), r.status(), null);
+    }
+
     private static ContestRequest withProblems(ContestRequest r, String... problemSlugs) {
         return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), r.status(),
                 List.of(problemSlugs));
@@ -401,6 +406,57 @@ class ContestServiceTest extends PostgresTest {
         ContestDetail read = contests.detail(slug, true, true, Optional.empty());
         assertThat(read.title()).isEqualTo("Retitled");
         assertThat(read.problems()).extracting(ContestProblemView::problemSlug).containsExactly(inactive, active);
+    }
+
+    /**
+     * Attaching an INACTIVE problem leaves the time it goes public to problem editors: without problem:update, a
+     * contest that holds one is neither published nor moved to start earlier (at now or before included).
+     */
+    @Test
+    void withoutProblemUpdateAContestHoldingInactiveProblemsIsNeitherPublishedNorMovedEarlier() {
+        String inactive = problem(ProblemStatus.INACTIVE);
+        String active = problem();
+        String draft = slug("holds-draft");
+        String upcoming = slug("holds-upcoming");
+        ContestRequest draftRequest = withStatus(published(draft, inactive, active), ContestStatus.DRAFT);
+        ContestRequest upcomingRequest = published(upcoming, inactive, active);
+        contests.create(draftRequest, true);
+        contests.create(upcomingRequest, true);
+        persisted();
+        Instant now = clock.instant(); // an hour before T
+
+        for (ContestRequest refused : List.of(
+                withStatus(withoutProblems(draftRequest), ContestStatus.PUBLISHED),
+                withStatus(draftRequest, ContestStatus.PUBLISHED))) {
+            assertThatThrownBy(() -> contests.update(draft, refused, false))
+                    .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
+                    .isEqualTo(ErrorCode.CONTEST_HOLDS_INACTIVE_PROBLEMS);
+        }
+        for (Instant earlier : List.of(now, now.minusSeconds(60), T.minus(Duration.ofMinutes(30)))) {
+            assertThatThrownBy(() -> contests.update(upcoming, withStart(withoutProblems(upcomingRequest), earlier), false))
+                    .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
+                    .isEqualTo(ErrorCode.CONTEST_HOLDS_INACTIVE_PROBLEMS);
+        }
+        persisted();
+        assertThat(contests.detail(draft, true, true, Optional.empty()).status()).isEqualTo(ContestStatus.DRAFT);
+        assertThat(contests.detail(upcoming, true, true, Optional.empty()).startsAt()).isEqualTo(T);
+
+        // later, a title, back to DRAFT, or a list of ACTIVE problems only: allowed
+        assertThat(contests.update(upcoming, withStart(withoutProblems(upcomingRequest), T.plusSeconds(3600)), false)
+                .startsAt()).isEqualTo(T.plusSeconds(3600));
+        assertThat(contests.update(upcoming, withStatus(withoutProblems(upcomingRequest), ContestStatus.DRAFT), false)
+                .status()).isEqualTo(ContestStatus.DRAFT);
+        assertThat(contests.update(draft, withProblems(withStatus(draftRequest, ContestStatus.PUBLISHED), active), false)
+                .status()).isEqualTo(ContestStatus.PUBLISHED);
+        persisted();
+
+        // with problem:update, or once the problem is ACTIVE, the same changes go through
+        assertThat(contests.update(upcoming, withStatus(upcomingRequest, ContestStatus.PUBLISHED), true).status())
+                .isEqualTo(ContestStatus.PUBLISHED);
+        persisted();
+        jdbc.update("UPDATE t_problems SET status = ? WHERE problem_slug = ?", ProblemStatus.ACTIVE.getValue(), inactive);
+        assertThat(contests.update(upcoming, withStart(withoutProblems(upcomingRequest), now), false).startsAt())
+                .isEqualTo(now);
     }
 
     /** Editors keep them, so an edit can send the problem list back unchanged. */

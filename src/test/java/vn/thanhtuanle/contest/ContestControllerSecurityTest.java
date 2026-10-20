@@ -265,6 +265,18 @@ class ContestControllerSecurityTest {
     }
 
     @Test
+    @WithMockUser(authorities = "contest:update")
+    void publishingAContestHoldingInactiveProblemsWithoutProblemUpdateIs403() throws Exception {
+        when(contests.update(eq("spring-cup"), any(ContestRequest.class), eq(false)))
+                .thenThrow(new AppException(ErrorCode.CONTEST_HOLDS_INACTIVE_PROBLEMS));
+
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value(ErrorCode.CONTEST_HOLDS_INACTIVE_PROBLEMS.getMessage()));
+    }
+
+    @Test
     void anonymousContestProblemReadIs401() throws Exception {
         mockMvc.perform(get(CONTESTS + "/spring-cup/problems/A"))
                 .andExpect(status().isUnauthorized());
