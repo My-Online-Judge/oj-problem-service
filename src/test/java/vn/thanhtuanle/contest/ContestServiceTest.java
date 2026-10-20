@@ -706,6 +706,40 @@ class ContestServiceTest extends PostgresTest {
         assertThat(contests.update(slug, withStatus(original, ContestStatus.DRAFT), true).status()).isEqualTo(ContestStatus.DRAFT);
     }
 
+    /**
+     * A score's minutes count from the start. Set back to DRAFT, a contest is no longer started, but once it has
+     * scores its start still may not move: re-published at another start, its rows would score from the wrong time.
+     */
+    @Test
+    void aContestWithScoresKeepsItsStartWhateverItsStatus() {
+        String p = problem();
+        String slug = slug("scored");
+        ContestRequest original = published(slug, p);
+        contests.create(original, true);
+        UUID id = contestId(slug);
+        persisted();
+        clock.set(T.plus(Duration.ofHours(1)));
+        score(id, UUID.randomUUID(), p, 0, T.plus(Duration.ofMinutes(15)));
+        ContestRequest draft = withStatus(original, ContestStatus.DRAFT);
+        contests.update(slug, draft, true);
+        persisted();
+
+        for (Instant moved : List.of(T.plus(Duration.ofHours(4)), T.minus(Duration.ofHours(1)))) {
+            assertThatThrownBy(() -> contests.update(slug, withStart(draft, moved), true))
+                    .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
+                    .isEqualTo(ErrorCode.CONTEST_HAS_SCORES);
+        }
+        persisted();
+        assertThat(contests.detail(slug, true, true, Optional.empty()).startsAt()).isEqualTo(T);
+
+        // everything else may still change, the problems of a DRAFT included
+        String other = problem();
+        ContestDetail changed = contests.update(slug, new ContestRequest(null, "Renamed", null, T,
+                T.plus(Duration.ofHours(5)), ContestStatus.DRAFT, List.of(other)), true);
+        assertThat(changed.title()).isEqualTo("Renamed");
+        assertThat(changed.problems()).extracting(ContestProblemView::problemSlug).containsExactly(other);
+    }
+
     @Test
     void deleteRefusedOnceStarted() {
         String slug = slug("no-delete");

@@ -42,6 +42,13 @@ public class ContestScoreRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    /** Whether the contest has any score row. */
+    public boolean existForContest(UUID contestId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM t_contest_scores WHERE contest_id = :contestId)",
+                Map.of("contestId", contestId), Boolean.class));
+    }
+
     public List<ScoreRow> findByContestAndUser(UUID contestId, UUID userId) {
         return jdbc.query("""
                 SELECT user_id, problem_id, attempts_before_ac, accepted_at

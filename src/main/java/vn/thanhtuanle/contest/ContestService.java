@@ -127,8 +127,9 @@ public class ContestService {
     /**
      * Once a PUBLISHED contest has started, its start time and problems are locked (409); its title, description,
      * end and status may still change. The start is compared at whole seconds, as it is stored. A request without
-     * problems keeps them as they are. A contest that holds an INACTIVE problem decides when that problem goes public,
-     * so without problem:update it is neither published nor moved to start earlier (403).
+     * problems keeps them as they are. Once the contest has scores its start stays too, whatever its status (409):
+     * their minutes count from it. A contest that holds an INACTIVE problem decides when that problem goes public, so
+     * without problem:update it is neither published nor moved to start earlier (403).
      */
     @Transactional
     public ContestDetail update(String slug, ContestRequest r, boolean problemEditor) {
@@ -140,6 +141,10 @@ public class ContestService {
         boolean startChanges = !seconds(contest.getStartsAt()).equals(startsAt);
         if (started(contest) && (problemsChange || startChanges)) {
             throw new AppException(ErrorCode.CONTEST_STARTED);
+        }
+        // Under the contest's row lock, which score writes take too (lockContest): no score appears meanwhile.
+        if (startChanges && scores.existForContest(contest.getId())) {
+            throw new AppException(ErrorCode.CONTEST_HAS_SCORES);
         }
         requireWindow(startsAt, endsAt);
         // An unchanged list is not checked again: a problem deleted since must not block the other changes.
