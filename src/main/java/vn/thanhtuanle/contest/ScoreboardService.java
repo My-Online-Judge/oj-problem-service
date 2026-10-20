@@ -49,10 +49,12 @@ public class ScoreboardService {
         TransactionTemplate readOnly = new TransactionTemplate(transactionManager);
         readOnly.setReadOnly(true);
         Board board = readOnly.execute(tx -> read(slug, editor));
-        if (board.rows().isEmpty()) {
+        // Only the contestants the board lists (Task 13 review M1): one with only compile or system errors is not.
+        Set<UUID> userIds = board.rows().stream().filter(Scoreboard::counts).map(ScoreRow::userId)
+                .collect(Collectors.toSet());
+        if (userIds.isEmpty()) {
             return new ScoreboardResponse(board.labels(), List.of());
         }
-        Set<UUID> userIds = board.rows().stream().map(ScoreRow::userId).collect(Collectors.toSet());
         Map<UUID, PublicUser> users = publicUsers.byIds(userIds);
         return new ScoreboardResponse(board.labels(),
                 Scoreboard.rank(board.startsAt(), board.labelByProblem(), board.rows(), users));

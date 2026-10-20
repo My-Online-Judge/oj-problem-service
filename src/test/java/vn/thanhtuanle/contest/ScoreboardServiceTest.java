@@ -249,7 +249,8 @@ class ScoreboardServiceTest extends PostgresTest {
 
     /**
      * Task 12 keeps a (0 attempts, no AC) row for a contestant whose contest submissions were only compile or system
-     * errors. The brief leaves out users with nothing counted, so such a contestant is not listed.
+     * errors. The brief leaves out users with nothing counted, so such a contestant is not listed, and identity is not
+     * asked about them (Task 13 review M1).
      */
     @Test
     void aContestantWithOnlyCompileOrSystemErrorsIsLeftOut() {
@@ -266,5 +267,6 @@ class ScoreboardServiceTest extends PostgresTest {
         assertThat(board.rows()).extracting(r -> r.user().id(), ScoreboardRow::rank, ScoreboardRow::solved,
                         ScoreboardRow::penalty)
                 .containsExactly(tuple(tried, 1, 0, 0L));
+        verify(users).byIds(Set.of(tried));
     }
 }

@@ -52,10 +52,10 @@ public final class Scoreboard {
         Map<UUID, SortedMap<String, ProblemCell>> cellsByUser = new LinkedHashMap<>();
         for (ScoreRow row : rows) {
             String label = labelByProblem.get(row.problemId());
-            boolean solved = row.acceptedAt() != null;
-            if (label == null || (!solved && row.attemptsBeforeAc() == 0)) {
+            if (label == null || !counts(row)) {
                 continue;
             }
+            boolean solved = row.acceptedAt() != null;
             // Never below 0: the recompute leaves out what was submitted before the start (Task 13 review I1), and
             // this keeps a row from before it, should one exist, from ranking first with a negative penalty.
             Long minutes = solved ? Math.max(0L, Duration.between(startsAt, row.acceptedAt()).toMinutes()) : null;
@@ -88,6 +88,11 @@ public final class Scoreboard {
             ranked.add(new ScoreboardRow(rank, line.user(), line.solved(), line.penalty(), line.problems()));
         }
         return ranked;
+    }
+
+    /** Whether the row counts: solved, or wrong tries counted. Only compile or system errors (0, no AC) do not. */
+    static boolean counts(ScoreRow row) {
+        return row.acceptedAt() != null || row.attemptsBeforeAc() > 0;
     }
 
     private static ScoreboardUser user(UUID id, PublicUser profile) {
