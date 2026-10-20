@@ -19,6 +19,10 @@ import vn.thanhtuanle.config.SecurityConfig;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
 import vn.thanhtuanle.contest.dto.ContestRequest;
+import vn.thanhtuanle.contest.dto.ProblemCell;
+import vn.thanhtuanle.contest.dto.ScoreboardResponse;
+import vn.thanhtuanle.contest.dto.ScoreboardRow;
+import vn.thanhtuanle.contest.dto.ScoreboardUser;
 import vn.thanhtuanle.oj.common.security.OjJwtAuthenticationFilter;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.oj.common.web.error.AppException;
@@ -66,6 +70,8 @@ class ContestControllerSecurityTest {
     @MockitoBean
     private ContestService contests;
     @MockitoBean
+    private ScoreboardService scoreboards;
+    @MockitoBean
     private JwtDecoder jwtDecoder;
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -88,6 +94,35 @@ class ContestControllerSecurityTest {
         mockMvc.perform(get(CONTESTS))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.serverTime").value("2026-10-21T03:00:00Z"));
+    }
+
+    /** The scoreboard is public; contest:update (DRAFT and upcoming boards) is passed on as the editor flag. */
+    @Test
+    void theScoreboardIsPublic() throws Exception {
+        UUID uid = UUID.randomUUID();
+        when(scoreboards.scoreboard("spring-cup", false)).thenReturn(new ScoreboardResponse(List.of("A"),
+                List.of(new ScoreboardRow(1, new ScoreboardUser(uid, null, null), 1, 15,
+                        Map.of("A", new ProblemCell(true, 1, 15L))))));
+        Jwt jwt = Jwt.withTokenValue("editor").header("alg", "RS256").subject("alice")
+                .claim(OjJwtDecoders.UID_CLAIM, uid.toString())
+                .claim(OjJwtAuthenticationFilter.AUTHORITIES_CLAIM, List.of("contest:update"))
+                .build();
+        when(jwtDecoder.decode("editor")).thenReturn(jwt);
+        when(scoreboards.scoreboard("spring-cup", true)).thenReturn(new ScoreboardResponse(List.of("A"), List.of()));
+
+        mockMvc.perform(get(CONTESTS + "/spring-cup/scoreboard"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.labels[0]").value("A"))
+                .andExpect(jsonPath("$.data.rows[0].rank").value(1))
+                .andExpect(jsonPath("$.data.rows[0].user.id").value(uid.toString()))
+                .andExpect(jsonPath("$.data.rows[0].user.username").isEmpty())
+                .andExpect(jsonPath("$.data.rows[0].penalty").value(15))
+                .andExpect(jsonPath("$.data.rows[0].problems.A.minutes").value(15));
+        mockMvc.perform(get(CONTESTS + "/spring-cup/scoreboard").header(HttpHeaders.AUTHORIZATION, "Bearer editor"))
+                .andExpect(status().isOk());
+
+        verify(scoreboards).scoreboard("spring-cup", false);
+        verify(scoreboards).scoreboard("spring-cup", true);
     }
 
     @Test

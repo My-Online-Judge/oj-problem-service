@@ -26,6 +26,7 @@ import vn.thanhtuanle.common.security.Authorities;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
 import vn.thanhtuanle.contest.dto.ContestRequest;
+import vn.thanhtuanle.contest.dto.ScoreboardResponse;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
 import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
@@ -45,6 +46,7 @@ public class ContestController {
     static final String EDITOR_AUTHORITY = "contest:update";
 
     private final ContestService contests;
+    private final ScoreboardService scoreboards;
 
     @GetMapping
     @Operation(summary = "Contests by phase: running, upcoming, past")
@@ -87,6 +89,12 @@ public class ContestController {
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<ProblemResponseDto> problem(@PathVariable String slug, @PathVariable String label) {
         return ApiResponse.success(contests.problem(slug, label, editor() && ProblemAccess.callerMayEdit()));
+    }
+
+    @GetMapping("/{slug}/scoreboard")
+    @Operation(summary = "The ICPC scoreboard: solved, then penalty (minutes + 20 per wrong try); no rows before the start")
+    public ApiResponse<ScoreboardResponse> scoreboard(@PathVariable String slug) {
+        return ApiResponse.success(scoreboards.scoreboard(slug, editor()));
     }
 
     /** A taken slug is a conflict here; oj-common answers it with 400 everywhere else. */

@@ -81,6 +81,9 @@ oj:
     # Optional: the tls profile authenticates gRPC callers by certificate. When set (32+ characters), every call
     # must also carry it as x-oj-service-token; see GrpcServerConfig.
     token: ${PROBLEM_RPC_TOKEN:}
+  identity:
+    # identity-service's public profiles: the scoreboard's usernames, through oj-common's PublicUserClient (cached 5 min).
+    base-url: ${OJ_IDENTITY_URI:http://identity-service:8000}
   security:
     jwt:
       # identity-service issues the access tokens and publishes their public key; fetched lazily, on

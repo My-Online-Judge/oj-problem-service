@@ -58,6 +58,10 @@ oj:
   tls:
     allowed-clients: api-gateway
     grpc-allowed-clients: submission-service
+  # Public profiles (scoreboard usernames), over TLS with this service's certificate, like the JWKS fetch below.
+  identity:
+    base-url: https://identity-service:8000
+    ssl-bundle: oj
   security:
     jwt:
       jwks-uri: https://identity-service:8000/.well-known/jwks.json

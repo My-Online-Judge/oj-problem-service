@@ -49,6 +49,14 @@ public class ContestScoreRepository {
                 Map.of("contestId", contestId), Boolean.class));
     }
 
+    /** Every score row of the contest, in no particular order. */
+    public List<ScoreRow> findByContestId(UUID contestId) {
+        return jdbc.query("""
+                SELECT user_id, problem_id, attempts_before_ac, accepted_at
+                FROM t_contest_scores WHERE contest_id = :contestId""",
+                Map.of("contestId", contestId), ROW);
+    }
+
     public List<ScoreRow> findByContestAndUser(UUID contestId, UUID userId) {
         return jdbc.query("""
                 SELECT user_id, problem_id, attempts_before_ac, accepted_at
