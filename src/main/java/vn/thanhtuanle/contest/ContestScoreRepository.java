@@ -50,12 +50,18 @@ public class ContestScoreRepository {
     }
 
     /**
-     * Whether the contest exists. If it does, its row stays held (FOR KEY SHARE) until the transaction ends: a delete
-     * of the contest waits for this transaction, so a score row written meanwhile cannot fail its foreign key, and a
-     * delete already in flight is waited for, after which the contest reads as gone.
+     * Whether the contest exists. If it does, its row stays locked (FOR NO KEY UPDATE) until the transaction ends:
+     * <ul>
+     *   <li>score writes in one contest take turns, so a recompute reads every verdict an earlier one committed
+     *       (its statement's snapshot would otherwise miss a verdict committed while it waited on the score row,
+     *       and write over that row without it);</li>
+     *   <li>a delete of the contest waits for this transaction, so a score row written meanwhile cannot fail its
+     *       foreign key, and a delete already in flight is waited for, after which the contest reads as gone.</li>
+     * </ul>
+     * Readers are not blocked: plain reads of the contest take no row lock.
      */
     public boolean lockContest(UUID contestId) {
-        return !jdbc.queryForList("SELECT 1 FROM t_contests WHERE id = :contestId FOR KEY SHARE",
+        return !jdbc.queryForList("SELECT 1 FROM t_contests WHERE id = :contestId FOR NO KEY UPDATE",
                 Map.of("contestId", contestId), Integer.class).isEmpty();
     }
 

@@ -30,8 +30,8 @@ public class ContestScoreRecorder {
                     e.submissionId(), e.contestId(), e.userId(), e.submittedAt());
             return;
         }
-        // Holds the contest until this transaction ends, so the score row's foreign key cannot fail: a delete in
-        // flight is waited for, and its contest then reads as gone.
+        // Locks the contest until this transaction ends: score writes in it take turns, and the score row's foreign
+        // key cannot fail (a delete in flight is waited for, and its contest then reads as gone).
         if (!scores.lockContest(e.contestId())) {
             log.debug("Verdict of submission {} keeps no contest score: no contest {}", e.submissionId(), e.contestId());
             return;

@@ -260,6 +260,24 @@ class ContestScoreRecorderTest extends PostgresTest {
         }
     }
 
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void twoVerdictsOfOneContestantRecordedAtOnceBothCount() throws Exception {
+        Key k = key();
+        UUID wrong = UUID.randomUUID();
+        UUID accepted = UUID.randomUUID();
+        try {
+            // Two consumers at once (a rebalance). The WA's transaction is held open after its recompute; the AC's
+            // must not recompute before the WA commits, or it would read verdicts without the WA and write them over
+            // the WA's row.
+            race(() -> recorder.record(k.verdict(wrong, WA, 5)), k.verdict(accepted, AC, 10));
+
+            assertThat(row(k)).isEqualTo(score(k, 1, at(10)));
+        } finally {
+            deleteCommitted(k, wrong, accepted);
+        }
+    }
+
     /**
      * Runs {@code earlier} in a transaction held open, then records {@code later} in its own; once that is seen
      * waiting for a lock, {@code earlier} commits, and both must finish.
