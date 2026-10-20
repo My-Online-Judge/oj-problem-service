@@ -357,6 +357,24 @@ class ContestServiceTest extends PostgresTest {
                 .isEqualTo(ContestStatus.DRAFT);
     }
 
+    /** Editors keep them, so an edit can send the problem list back unchanged. */
+    @Test
+    void theDetailLeavesDeletedProblemsOutForNonEditors() {
+        String p1 = problem(), p2 = problem();
+        String slug = slug("deleted-shown");
+        contests.create(published(slug, p1, p2), true);
+        persisted();
+        jdbc.update("UPDATE t_problems SET status = ? WHERE problem_slug = ?", ProblemStatus.DELETED.getValue(), p2);
+        clock.set(T);
+
+        assertThat(contests.detail(slug, false, false, Optional.empty()).problems())
+                .extracting(ContestProblemView::label, ContestProblemView::problemSlug).containsExactly(tuple("A", p1));
+        assertThat(contests.detail(slug, true, false, Optional.empty()).problems())
+                .extracting(ContestProblemView::label, ContestProblemView::problemSlug)
+                .containsExactly(tuple("A", p1), tuple("B", p2));
+        assertThat(contests.detail(slug, true, true, Optional.empty()).problems()).hasSize(2);
+    }
+
     @Test
     void draftDetailIs404ForNonEditors() {
         String slug = slug("draft");

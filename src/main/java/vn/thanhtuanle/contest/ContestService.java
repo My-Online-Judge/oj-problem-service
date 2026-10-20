@@ -85,12 +85,13 @@ public class ContestService {
 
     /**
      * DRAFT is a 404 for non-editors. The problems stay hidden while the contest is a DRAFT or has not started,
-     * unless the caller is both an editor and a problem editor.
+     * unless the caller is both an editor and a problem editor. Problems deleted since they were attached are left
+     * out for non-editors; editors keep them, so an edit can send the list back unchanged.
      */
     @Transactional(readOnly = true)
     public ContestDetail detail(String slug, boolean editor, boolean problemEditor, Optional<UUID> viewer) {
         Contest contest = visible(slug, editor);
-        return toDetail(contest, editor && problemEditor, viewer);
+        return toDetail(contest, editor, editor && problemEditor, viewer);
     }
 
     @Transactional
@@ -111,7 +112,7 @@ public class ContestService {
                 .build();
         setProblems(contest, chosen);
         claimSlug(contest);
-        return toDetail(contest, problemEditor, Optional.empty());
+        return toDetail(contest, true, problemEditor, Optional.empty());
     }
 
     /**
@@ -141,7 +142,7 @@ public class ContestService {
             contests.flush(); // the old rows go first: (contest, label) and (contest, problem) are unique
             setProblems(contest, chosen);
         }
-        return toDetail(contest, problemEditor, Optional.empty());
+        return toDetail(contest, true, problemEditor, Optional.empty());
     }
 
     /** Refused (409) for a PUBLISHED contest that has started; otherwise its problems and scores go with it. */
@@ -288,12 +289,17 @@ public class ContestService {
                 phase(c, now), counts.getOrDefault(c.getId(), 0));
     }
 
-    /** {@code early}: the caller may see the problems of a DRAFT, or before the start. */
-    private ContestDetail toDetail(Contest contest, boolean early, Optional<UUID> viewer) {
+    /**
+     * {@code early}: the caller may see the problems of a DRAFT, or before the start. {@code editor}: the caller also
+     * sees the problems deleted since they were attached.
+     */
+    private ContestDetail toDetail(Contest contest, boolean editor, boolean early, Optional<UUID> viewer) {
         Instant now = clock.instant();
         ContestPhase phase = phase(contest, now);
         boolean open = contest.getStatus() == ContestStatus.PUBLISHED && phase != ContestPhase.UPCOMING;
-        List<ContestProblem> shown = early || open ? ordered(contest) : List.of();
+        List<ContestProblem> shown = (early || open ? ordered(contest) : List.<ContestProblem>of()).stream()
+                .filter(cp -> editor || cp.getProblem().getStatus() != ProblemStatus.DELETED.getValue())
+                .toList();
         List<ContestProblemView> views = shown.stream()
                 .map(cp -> new ContestProblemView(String.valueOf(cp.getLabel()), cp.getProblem().getProblemSlug(),
                         cp.getProblem().getTitle()))
