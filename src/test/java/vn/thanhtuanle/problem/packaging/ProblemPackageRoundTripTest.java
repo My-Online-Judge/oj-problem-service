@@ -1,0 +1,237 @@
+package vn.thanhtuanle.problem.packaging;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import vn.thanhtuanle.common.enums.ProblemStatus;
+import vn.thanhtuanle.problem.ProblemService;
+import vn.thanhtuanle.problem.dto.CreateProblemDto;
+import vn.thanhtuanle.testcase.TestCaseBundleException;
+
+import javax.sql.DataSource;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * Export a problem as a package and import it back as a new problem, on Postgres. The export decides everything that
+ * can fail (an unknown slug, a missing file) before it streams, and streams with no database connection held.
+ */
+class ProblemPackageRoundTripTest extends PackagingPostgresTest {
+
+    private static final String EXPORT = "/api/v1/problems/{slug}/export";
+
+    /** Test case name, then its input and output. */
+    private static final Map<String, String[]> CASES = new LinkedHashMap<>();
+
+    static {
+        CASES.put("1", new String[] {"2\n1 2\n", "3\n"});
+        CASES.put("2", new String[] {"3\n4 5 6\n", "15\n"});
+        CASES.put("10", new String[] {"1\n-7\n", "-7\n"});
+    }
+
+    @Autowired ProblemService problems;
+    @Autowired ObjectMapper objectMapper;
+    @Autowired DataSource dataSource;
+
+    private static RequestPostProcessor admin(String authority) {
+        return user("admin").authorities(new SimpleGrantedAuthority(authority));
+    }
+
+    /** The problem the round trip starts from: test cases 1, 2 and 10 (1 is a sample), two tags, INACTIVE. */
+    private void seed(String slug) throws Exception {
+        CreateProblemDto dto = CreateProblemDto.builder().title("Two sum").subject("Arrays")
+                .description("Find two numbers.").timeLimit(2000).memoryLimit(128).hardnessLevel(2).problemSlug(slug)
+                .inputDescription("n, then n numbers").outputDescription("Their sum").sampleInput("2\n1 2\n")
+                .sampleOutput("3\n").hint("Add them up.").tags(List.of("graph", "dp")).status(ProblemStatus.INACTIVE)
+                .build();
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        CASES.forEach((name, io) -> {
+            files.put(name + ".in", utf8(io[0]));
+            files.put(name + ".out", utf8(io[1]));
+        });
+        problems.createProblem(dto, new MockMultipartFile("file", "cases.zip", "application/zip", zip(files)));
+        jdbc.update("""
+                UPDATE t_test_cases SET is_sample = (input = ?)
+                WHERE problem_id = (SELECT id FROM t_problems WHERE problem_slug = ?)""", slug + "/1.in", slug);
+        clearInvocations(bundleStore);
+    }
+
+    /** GET export through MockMvc: the controller has returned before the body streams. */
+    private byte[] export(String slug) throws Exception {
+        MvcResult started = mvc.perform(get(EXPORT, slug).with(admin("problem:update")))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        return mvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+    }
+
+    private static Map<String, byte[]> unzip(byte[] zip) throws Exception {
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zip))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                entries.put(entry.getName(), zis.readAllBytes());
+            }
+        }
+        return entries;
+    }
+
+    /** The stored problem as the fields of a create request, tags sorted. */
+    private CreateProblemDto stored(String slug) {
+        CreateProblemDto dto = jdbc.queryForObject("""
+                SELECT title, subject, description, time_limit, memory_limit, hardness_level, problem_slug,
+                       input_description, output_description, sample_input, sample_output, hint, status
+                FROM t_problems WHERE problem_slug = ?""", (rs, i) -> CreateProblemDto.builder()
+                .title(rs.getString("title")).subject(rs.getString("subject"))
+                .description(rs.getString("description")).timeLimit(rs.getInt("time_limit"))
+                .memoryLimit(rs.getInt("memory_limit")).hardnessLevel(rs.getInt("hardness_level"))
+                .problemSlug(rs.getString("problem_slug")).inputDescription(rs.getString("input_description"))
+                .outputDescription(rs.getString("output_description")).sampleInput(rs.getString("sample_input"))
+                .sampleOutput(rs.getString("sample_output")).hint(rs.getString("hint"))
+                .status(ProblemStatus.fromValue(rs.getInt("status"))).build(), slug);
+        dto.setTags(jdbc.queryForList("""
+                SELECT t.tag FROM t_problem_tags t JOIN t_problems p ON p.id = t.problem_id
+                WHERE p.problem_slug = ? ORDER BY t.tag""", String.class, slug));
+        return dto;
+    }
+
+    /** Stored input file name ("1.in") to its sample flag. */
+    private Map<String, Boolean> sampleFlags(String slug) {
+        Map<String, Boolean> flags = new TreeMap<>();
+        jdbc.query("""
+                SELECT tc.input, tc.is_sample FROM t_test_cases tc JOIN t_problems p ON p.id = tc.problem_id
+                WHERE p.problem_slug = ?""", rs -> {
+            flags.put(rs.getString(1).substring(slug.length() + 1), rs.getBoolean(2));
+        }, slug);
+        return flags;
+    }
+
+    @Test
+    void exportThenImportGivesAnEqualProblem() throws Exception {
+        String slug = newSlug("rt");
+        String copy = slug + "-copy";
+        seed(slug);
+
+        byte[] pkg = export(slug);
+        mvc.perform(multipart("/api/v1/problems/import")
+                        .file(new MockMultipartFile("file", slug + ".zip", "application/zip", pkg))
+                        .param("slugOverride", copy)
+                        .with(admin("problem:create")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value(201))
+                .andExpect(jsonPath("$.data.problemSlug").value(copy));
+
+        CreateProblemDto original = stored(slug);
+        assertThat(original).hasNoNullFieldsOrProperties();
+        assertThat(original.getTags()).containsExactly("dp", "graph");
+        assertThat(original.getStatus()).isEqualTo(ProblemStatus.INACTIVE);
+        assertThat(stored(copy)).usingRecursiveComparison().ignoringFields("problemSlug").isEqualTo(original);
+        for (String name : CASES.keySet()) {
+            for (String file : List.of(name + ".in", name + ".out")) {
+                assertThat(sources.files.get(copy + "/" + file)).as(file)
+                        .isNotNull().isEqualTo(sources.files.get(slug + "/" + file));
+            }
+        }
+        assertThat(sampleFlags(copy)).isEqualTo(sampleFlags(slug))
+                .isEqualTo(Map.of("1.in", true, "2.in", false, "10.in", false));
+        assertThat(jdbc.queryForObject("SELECT test_case_high_water FROM t_problems WHERE problem_slug = ?",
+                Integer.class, copy)).isEqualTo(10);
+        verify(bundleStore, times(1)).publish(anyString(), anyList());
+        verify(bundleStore).publish(eq(copy), anyList());
+    }
+
+    @Test
+    void exportWritesProblemJsonAndTestcases() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+
+        Map<String, byte[]> entries = unzip(export(slug));
+
+        assertThat(entries.keySet()).containsExactly("problem.json", "testcases/1.in", "testcases/1.out",
+                "testcases/2.in", "testcases/2.out", "testcases/10.in", "testcases/10.out");
+        assertThat(entries.get("testcases/10.out")).isEqualTo(utf8(CASES.get("10")[1]));
+        String text = new String(entries.get("problem.json"), StandardCharsets.UTF_8);
+        assertThat(text).as("pretty-printed").contains("\"schemaVersion\" : 1");
+        JsonNode json = objectMapper.readTree(text);
+        assertThat(json.get("schemaVersion").intValue()).isEqualTo(1);
+        List<String> samples = new ArrayList<>();
+        json.get("samples").forEach(n -> samples.add(n.textValue()));
+        assertThat(samples).containsExactly("1");
+        List<String> tags = new ArrayList<>();
+        json.at("/problem/tags").forEach(n -> tags.add(n.textValue()));
+        assertThat(tags).containsExactlyInAnyOrder("graph", "dp");
+        assertThat(json.at("/problem/status").isInt()).as("status is written as its value").isTrue();
+        assertThat(json.at("/problem/status").intValue()).isEqualTo(ProblemStatus.INACTIVE.getValue());
+        assertThat(json.at("/problem/problemSlug").textValue()).isEqualTo(slug);
+    }
+
+    @Test
+    void exportOfAnUnknownSlugIs404() throws Exception {
+        mvc.perform(get(EXPORT, PREFIX + "no-such-problem").with(admin("problem:update")))
+                .andExpect(request().asyncNotStarted())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    void missingSourceFileFailsBeforeStreaming() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+        sources.files.remove(slug + "/2.out");
+
+        assertThatThrownBy(() -> packages.plan(slug))
+                .isInstanceOf(TestCaseBundleException.class)
+                .hasMessageContaining(slug + "/2.out");
+        mvc.perform(get(EXPORT, slug).with(admin("problem:update")))
+                .andExpect(request().asyncNotStarted())
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    void exportHoldsNoDatabaseConnectionWhileReadingTheFiles() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+        HikariPoolMXBean pool = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
+        List<Integer> activeWhileReading = new CopyOnWriteArrayList<>();
+        sources.beforeRead = () -> activeWhileReading.add(pool.getActiveConnections());
+
+        export(slug);
+
+        assertThat(activeWhileReading).hasSize(2 * CASES.size()).containsOnly(0);
+    }
+}

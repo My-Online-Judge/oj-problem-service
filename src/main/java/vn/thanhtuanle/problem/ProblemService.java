@@ -29,6 +29,7 @@ import vn.thanhtuanle.problem.dto.ProblemResponseDto;
 import vn.thanhtuanle.problem.dto.ProblemStatisticProjection;
 import vn.thanhtuanle.problem.dto.ProblemStatisticsInfo;
 import vn.thanhtuanle.problem.mapper.ProblemMapper;
+import vn.thanhtuanle.problem.packaging.PackagedTestCase;
 import vn.thanhtuanle.testcase.TestCaseBundlePublisher;
 import vn.thanhtuanle.testcase.TestCaseSourceStore;
 
@@ -66,21 +67,60 @@ public class ProblemService {
 
         validateCreateRequest(dto, zipFile);
 
-        dto.setTags(ProblemTags.normalize(dto.getTags()));
-        Problem problem = problemMapper.toEntity(dto);
-        if (problem.getTags() == null) {
-            problem.setTags(new ArrayList<>());
-        }
-        problem.setTestCases(new ArrayList<>());
         // Claim the slug before any test-case file is written: of two concurrent creates of one slug the unique index
         // lets one insert through, and the other fails here — before it could overwrite the winner's files.
-        problem = claimSlug(problem);
+        Problem problem = claimSlug(newProblem(dto));
 
         // Process files
         processTestCases(zipFile, problem);
 
         // Sort test cases by name
         problem.getTestCases().sort(Comparator.comparing(TestCase::getInput));
+        return saveAndPublish(problem);
+    }
+
+    /**
+     * Creates a problem from an imported package, by {@link #createProblem}'s rules. Each test case keeps its package
+     * name ({@code <slug>/<name>.in|out}) and its sample flag.
+     */
+    @Transactional
+    public ProblemResponseDto createFromPackage(CreateProblemDto dto, List<PackagedTestCase> cases) {
+        log.info("Start createFromPackage for: {}", dto.getProblemSlug());
+
+        validateNewProblem(dto);
+        Problem problem = claimSlug(newProblem(dto)); // before any file is written, as in createProblem
+
+        for (PackagedTestCase tc : cases) {
+            String inputPath = String.format("%s/%s%s", problem.getProblemSlug(), tc.name(), AppProperties.INPUT_FILE_EXTENSION);
+            String outputPath = String.format("%s/%s%s", problem.getProblemSlug(), tc.name(), AppProperties.OUTPUT_FILE_EXTENSION);
+            sources.put(inputPath, tc.input());
+            sources.put(outputPath, tc.output());
+            problem.getTestCases().add(TestCase.builder()
+                    .input(inputPath)
+                    .output(outputPath)
+                    .sample(tc.sample())
+                    .problem(problem)
+                    .build());
+        }
+        return saveAndPublish(problem);
+    }
+
+    /** The entity of a new problem from its create request, tags normalised, with no test cases yet. */
+    private Problem newProblem(CreateProblemDto dto) {
+        dto.setTags(ProblemTags.normalize(dto.getTags()));
+        Problem problem = problemMapper.toEntity(dto);
+        if (problem.getTags() == null) {
+            problem.setTags(new ArrayList<>());
+        }
+        problem.setTestCases(new ArrayList<>());
+        return problem;
+    }
+
+    /**
+     * Sets the test-case high-water mark (V6) to the largest numeric test-case name, saves the problem, and publishes
+     * its bundle inside the transaction: a failed publish rolls the create back, so a retry is not refused as a taken slug.
+     */
+    private ProblemResponseDto saveAndPublish(Problem problem) {
         problem.setTestCaseHighWater(problem.getTestCases().stream()
                 .map(tc -> TestCaseService.baseIndexOf(tc.getInput()))
                 .filter(java.util.Objects::nonNull)
@@ -105,6 +145,15 @@ public class ProblemService {
     }
 
     private void validateCreateRequest(CreateProblemDto dto, MultipartFile zipFile) {
+        validateNewProblem(dto);
+
+        if (zipFile == null || zipFile.isEmpty()) {
+            throw new IllegalArgumentException("Zip file cannot be empty");
+        }
+    }
+
+    /** The rules of every new problem: not DELETED, not the reserved slug, and a slug never used before. */
+    private void validateNewProblem(CreateProblemDto dto) {
         rejectDeletedStatus(dto.getStatus());
         if (RESERVED_SLUG.equalsIgnoreCase(dto.getProblemSlug())) {
             throw new IllegalArgumentException("Problem slug \"" + RESERVED_SLUG + "\" is reserved");
@@ -112,10 +161,6 @@ public class ProblemService {
         // Deleted problems count: their slug stays taken forever, because submissions keep the slug.
         if (problemRepository.existsByProblemSlug(dto.getProblemSlug())) {
             throw new ResourceAlreadyExistException("Problem slug already exists: " + dto.getProblemSlug());
-        }
-
-        if (zipFile == null || zipFile.isEmpty()) {
-            throw new IllegalArgumentException("Zip file cannot be empty");
         }
     }
 
