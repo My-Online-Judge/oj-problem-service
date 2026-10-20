@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Manages a problem's test cases after creation (list / read / add / update / import / delete). Files are kept in the
@@ -312,6 +313,7 @@ public class TestCaseService {
     }
 
     private static final int PREVIEW_BYTES = 1024;
+    private static final Pattern TEST_CASE_NUMBER = Pattern.compile("[0-9]{1,9}");
 
     private TestCaseSummary toSummary(TestCase tc, TestCaseSourceStore.Head in, TestCaseSourceStore.Head out) {
         return new TestCaseSummary(tc.getId(), baseNameOf(tc.getInput()), tc.isSample(),
@@ -417,15 +419,13 @@ public class TestCaseService {
     }
 
     /**
-     * Numeric base name of a path/file name, or {@code null} when it is not a plain integer.
+     * Numeric base name of a path/file name, or {@code null} when it is not a number of at most 9 digits (as in V6's
+     * backfill), so the high-water mark it feeds can never overflow.
      * e.g. {@code "a-plus-b/12.in"} -> {@code 12}, {@code "a-plus-b/sample.in"} -> {@code null}.
      */
     static Integer baseIndexOf(String pathOrName) {
-        try {
-            return Integer.parseInt(baseNameOf(pathOrName).trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        String name = baseNameOf(pathOrName).trim();
+        return TEST_CASE_NUMBER.matcher(name).matches() ? Integer.valueOf(name) : null;
     }
 
     /**

@@ -44,6 +44,15 @@ class TestCaseServiceTest {
         assertNull(TestCaseService.baseIndexOf("a-plus-b/"));
     }
 
+    /** Like V6's backfill, a number has at most 9 digits: the high-water mark (an int) can never overflow. */
+    @Test
+    void baseIndexOf_overNineDigits_returnsNull() {
+        assertEquals(999_999_999, TestCaseService.baseIndexOf("s/999999999.in"));
+        assertNull(TestCaseService.baseIndexOf("s/1000000000.in"));
+        assertNull(TestCaseService.baseIndexOf("s/2147483647.in"));
+        assertNull(TestCaseService.baseIndexOf("s/99999999999.in"));
+    }
+
     @Test
     void baseNameOf_stripsDirectoryAndExtension() {
         assertEquals("1", TestCaseService.baseNameOf("a-plus-b/1.in"));

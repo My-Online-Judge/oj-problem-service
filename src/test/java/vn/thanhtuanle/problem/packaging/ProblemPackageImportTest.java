@@ -133,6 +133,19 @@ class ProblemPackageImportTest extends PackagingPostgresTest {
         assertThat(sources.files.get(slug + "/1.in")).isEqualTo(utf8("1 2\n"));
     }
 
+    /** 2147483647 is a valid name but not a test-case number, so the next added case is 2, not an int overflow. */
+    @Test
+    void aTenDigitNameDoesNotRaiseTheHighWaterMark() throws Exception {
+        String slug = newSlug("imp");
+        Map<String, byte[]> entries = entries(problemJson(slug));
+        entries.put("testcases/2147483647.in", utf8("1 1\n"));
+        entries.put("testcases/2147483647.out", utf8("2\n"));
+
+        importZip(zip(entries)).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT test_case_high_water FROM t_problems WHERE problem_slug = ?",
+                Integer.class, slug)).isEqualTo(1);
+    }
+
     @Test
     void noTestCasesIs400() throws Exception {
         String slug = newSlug("imp");
