@@ -380,6 +380,29 @@ class ContestServiceTest extends PostgresTest {
                 .isEqualTo(ContestStatus.DRAFT);
     }
 
+    /**
+     * A caller without problem:update does not see an upcoming contest's problems, so it cannot send them back: an
+     * update without a problem list leaves the list as it is.
+     */
+    @Test
+    void aContestOnlyEditorRetitlesAnUpcomingContestWithoutSeeingItsProblems() {
+        String inactive = problem(ProblemStatus.INACTIVE);
+        String active = problem();
+        String slug = slug("retitle");
+        ContestRequest original = published(slug, inactive, active);
+        contests.create(original, true);
+        persisted();
+
+        ContestRequest retitled = new ContestRequest(null, "Retitled", original.description(), original.startsAt(),
+                original.endsAt(), original.status(), null);
+        assertThat(contests.update(slug, retitled, false).title()).isEqualTo("Retitled");
+        persisted();
+
+        ContestDetail read = contests.detail(slug, true, true, Optional.empty());
+        assertThat(read.title()).isEqualTo("Retitled");
+        assertThat(read.problems()).extracting(ContestProblemView::problemSlug).containsExactly(inactive, active);
+    }
+
     /** Editors keep them, so an edit can send the problem list back unchanged. */
     @Test
     void theDetailLeavesDeletedProblemsOutForNonEditors() {

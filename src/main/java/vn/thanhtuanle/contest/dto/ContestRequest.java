@@ -11,7 +11,9 @@ import java.util.List;
 
 /**
  * A contest to create or update. {@code slug} is required on create (the {@link OnCreate} group) and ignored on
- * update; the problems get their labels from their order: A, B, C …
+ * update. {@code problemSlugs} is required on create; on update it may be left out (null), which keeps the list as
+ * it is, because a caller without {@code problem:update} does not see an upcoming contest's problems to send them
+ * back. The problems get their labels from their order: A, B, C …
  */
 public record ContestRequest(
         @NotNull(groups = OnCreate.class, message = "Slug is required")
@@ -25,7 +27,8 @@ public record ContestRequest(
         @NotNull(message = "Start time is required") Instant startsAt,
         @NotNull(message = "End time is required") Instant endsAt,
         @NotNull(message = "Status is required") ContestStatus status,
-        @NotNull(message = "Problems are required") @Size(min = 1, max = 26, message = "A contest has 1 to 26 problems")
+        @NotNull(groups = OnCreate.class, message = "Problems are required")
+        @Size(min = 1, max = 26, message = "A contest has 1 to 26 problems")
         List<String> problemSlugs) {
 
     /** The rules that apply on create only. */

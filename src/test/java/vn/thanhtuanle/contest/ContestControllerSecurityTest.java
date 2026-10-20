@@ -36,8 +36,10 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -141,6 +143,28 @@ class ContestControllerSecurityTest {
 
         mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("Bad Slug")))
                 .andExpect(status().isOk());
+    }
+
+    /** An update may leave the problem list out (unchanged); a create may not. */
+    @Test
+    @WithMockUser(authorities = {"contest:create", "contest:update"})
+    void anUpdateMayLeaveOutTheProblems() throws Exception {
+        String noProblems = """
+                {"title": "Spring cup", "startsAt": "2026-10-21T02:00:00Z", "endsAt": "2026-10-21T05:00:00Z",
+                 "status": "PUBLISHED"}""";
+        when(contests.update(eq("spring-cup"), any(ContestRequest.class), anyBoolean())).thenReturn(detail("spring-cup"));
+
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(noProblems))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(CONTESTS).contentType(MediaType.APPLICATION_JSON)
+                        .content(noProblems.replace("{", "{\"slug\": \"spring-cup\", ")))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON)
+                        .content(noProblems.replace("}", ", \"problemSlugs\": []}")))
+                .andExpect(status().isBadRequest());
+
+        verify(contests).update(eq("spring-cup"), argThat(r -> r.problemSlugs() == null), eq(false));
+        verify(contests, never()).create(any(), anyBoolean());
     }
 
     /** contest:* alone reads a contest's problems by the public rule (DRAFT or before the start: 404). */

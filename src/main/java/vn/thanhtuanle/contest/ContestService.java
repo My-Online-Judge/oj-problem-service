@@ -126,7 +126,8 @@ public class ContestService {
 
     /**
      * Once a PUBLISHED contest has started, its start time and problems are locked (409); its title, description,
-     * end and status may still change. The start is compared at whole seconds, as it is stored.
+     * end and status may still change. The start is compared at whole seconds, as it is stored. A request without
+     * problems keeps them as they are.
      */
     @Transactional
     public ContestDetail update(String slug, ContestRequest r, boolean problemEditor) {
@@ -134,7 +135,7 @@ public class ContestService {
         Contest contest = findForUpdate(slug);
         Instant startsAt = seconds(r.startsAt());
         Instant endsAt = seconds(r.endsAt());
-        boolean problemsChange = !slugsOf(contest).equals(r.problemSlugs());
+        boolean problemsChange = r.problemSlugs() != null && !slugsOf(contest).equals(r.problemSlugs());
         boolean startChanges = !seconds(contest.getStartsAt()).equals(startsAt);
         if (started(contest) && (problemsChange || startChanges)) {
             throw new AppException(ErrorCode.CONTEST_STARTED);
