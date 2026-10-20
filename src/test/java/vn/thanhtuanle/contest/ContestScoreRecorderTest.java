@@ -172,6 +172,52 @@ class ContestScoreRecorderTest extends PostgresTest {
         assertThat(row(k)).isEqualTo(score(k, 0, at(5)));
     }
 
+    /** The first AC rejudged to WA: it becomes a wrong try, and the next AC is the accepted one. */
+    @Test
+    void rejudgeThatTakesTheAcAwayMovesAcceptedAt() {
+        Key k = key();
+        UUID firstAc = UUID.randomUUID();
+        recorder.record(k.verdict(UUID.randomUUID(), WA, 5));
+        recorder.record(k.verdict(firstAc, AC, 10));
+        recorder.record(k.verdict(UUID.randomUUID(), AC, 20));
+        assertThat(row(k)).isEqualTo(score(k, 1, at(10)));
+
+        assertThat(recorder.record(k.rejudge(firstAc, WA, 10))).isTrue();
+
+        assertThat(row(k)).isEqualTo(score(k, 2, at(20)));
+    }
+
+    /** The only AC rejudged to a system error (a timed-out rejudge): no AC is left, and the SE is no try. */
+    @Test
+    void rejudgeToSystemErrorDropsTheAc() {
+        Key k = key();
+        UUID accepted = UUID.randomUUID();
+        recorder.record(k.verdict(UUID.randomUUID(), WA, 5));
+        recorder.record(k.verdict(accepted, AC, 10));
+        assertThat(row(k)).isEqualTo(score(k, 1, at(10)));
+
+        assertThat(recorder.record(k.rejudge(accepted, SE, 10))).isTrue();
+
+        assertThat(row(k)).isEqualTo(score(k, 1, null));
+    }
+
+    /** A verdict recomputes its own contestant's row in its own contest only. */
+    @Test
+    void aVerdictMovesOnlyItsOwnContestantsRowInItsOwnContest() {
+        Key alice = key();
+        Key bob = new Key(alice.contestId(), UUID.randomUUID(), alice.problemId());
+        Key aliceElsewhere = new Key(contest(), alice.userId(), alice.problemId());
+        recorder.record(alice.verdict(UUID.randomUUID(), WA, 5));
+        recorder.record(bob.verdict(UUID.randomUUID(), AC, 7));
+        recorder.record(aliceElsewhere.verdict(UUID.randomUUID(), AC, 3));
+
+        recorder.record(alice.verdict(UUID.randomUUID(), AC, 12));
+
+        assertThat(row(alice)).isEqualTo(score(alice, 1, at(12)));
+        assertThat(row(bob)).isEqualTo(score(bob, 0, at(7)));
+        assertThat(row(aliceElsewhere)).isEqualTo(score(aliceElsewhere, 0, at(3)));
+    }
+
     @Test
     void duplicateDeliveryChangesNothing() {
         Key k = key();
