@@ -7,7 +7,8 @@ import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import vn.thanhtuanle.common.constant.AppProperties;
@@ -56,6 +57,7 @@ public class ProblemPackageService {
     private final TestCaseSourceStore sources;
     private final ObjectMapper objectMapper;
     private final Validator validator;
+    private final PlatformTransactionManager transactionManager;
 
     /** Everything an export writes, read before the response streams; {@link #write} needs no database. */
     public record PackagePlan(CreateProblemDto problem, List<PlannedTestCase> testCases) {
@@ -72,10 +74,22 @@ public class ProblemPackageService {
 
     /**
      * The first phase of an export, before the response streams: an unknown slug is a 404 and a missing file fails
-     * here, while an error can still be answered.
+     * here, while an error can still be answered. The rows are copied in their own read-only transaction and the files
+     * are checked after it, so a slow MinIO never holds a database connection.
      */
-    @Transactional(readOnly = true)
     public PackagePlan plan(String slug) {
+        TransactionTemplate readOnly = new TransactionTemplate(transactionManager);
+        readOnly.setReadOnly(true);
+        PackagePlan plan = readOnly.execute(tx -> planFromRows(slug));
+        for (PlannedTestCase tc : plan.testCases()) {
+            requireStored(tc.inputPath());
+            requireStored(tc.outputPath());
+        }
+        return plan;
+    }
+
+    /** The plan from the database alone; needs a transaction for the problem's lazy tags and test cases. */
+    private PackagePlan planFromRows(String slug) {
         Problem problem = problemRepository.findLiveBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Problem not found with slug: " + slug));
         CreateProblemDto dto = CreateProblemDto.builder()
@@ -98,10 +112,6 @@ public class ProblemPackageService {
                 .map(tc -> new PlannedTestCase(nameOf(tc.getInput()), tc.getInput(), tc.getOutput(), tc.isSample()))
                 .sorted(byName(PlannedTestCase::name))
                 .toList();
-        for (PlannedTestCase tc : testCases) {
-            requireStored(tc.inputPath());
-            requireStored(tc.outputPath());
-        }
         return new PackagePlan(dto, testCases);
     }
 

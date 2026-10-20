@@ -222,16 +222,17 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
     }
 
+    /** Neither the plan's existence checks (2 per test case) nor the stream's reads (2 more) hold a connection. */
     @Test
-    void exportHoldsNoDatabaseConnectionWhileReadingTheFiles() throws Exception {
+    void exportHoldsNoDatabaseConnectionWhileCallingTheFileStore() throws Exception {
         String slug = newSlug("rt");
         seed(slug);
         HikariPoolMXBean pool = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
-        List<Integer> activeWhileReading = new CopyOnWriteArrayList<>();
-        sources.beforeRead = () -> activeWhileReading.add(pool.getActiveConnections());
+        List<Integer> activeWhileCalling = new CopyOnWriteArrayList<>();
+        sources.beforeRead = () -> activeWhileCalling.add(pool.getActiveConnections());
 
         export(slug);
 
-        assertThat(activeWhileReading).hasSize(2 * CASES.size()).containsOnly(0);
+        assertThat(activeWhileCalling).hasSize(4 * CASES.size()).containsOnly(0);
     }
 }

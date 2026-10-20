@@ -44,7 +44,7 @@ abstract class PackagingPostgresTest extends PostgresTest {
         }
     }
 
-    /** In-memory test-case files that run {@link #beforeRead} on every read. */
+    /** In-memory test-case files that run {@link #beforeRead} on every read and every existence check (a MinIO stat). */
     static class ProbedSources extends InMemoryTestCaseSourceStore {
         volatile Runnable beforeRead = () -> { };
 
@@ -52,6 +52,12 @@ abstract class PackagingPostgresTest extends PostgresTest {
         public Optional<byte[]> get(String path) {
             beforeRead.run();
             return super.get(path);
+        }
+
+        @Override
+        public boolean exists(String path) {
+            beforeRead.run();
+            return super.exists(path);
         }
     }
 
