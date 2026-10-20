@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.contest.dto.ScoreboardResponse;
 import vn.thanhtuanle.oj.common.identity.PublicUser;
 import vn.thanhtuanle.oj.common.identity.PublicUserClient;
@@ -59,7 +60,9 @@ public class ScoreboardService {
 
     /**
      * Labels and problems come from the contest's current problems: score rows of a problem removed while the contest
-     * was a DRAFT stay in the table and are dropped here.
+     * was a DRAFT stay in the table and are dropped here. So are a problem soft-deleted after it was attached and its
+     * rows, for everyone, editors included, as the public detail and the list count leave it out: one board, the same
+     * ranking for every viewer.
      */
     private Board read(String slug, boolean editor) {
         Contest contest = contests.findBySlug(slug)
@@ -67,10 +70,13 @@ public class ScoreboardService {
                 .orElseThrow(() -> new ResourceNotFoundException("Contest not found: " + slug));
         List<String> labels = new ArrayList<>();
         Map<UUID, String> labelByProblem = new HashMap<>();
-        contest.getProblems().stream().sorted(Comparator.comparingInt(ContestProblem::getPosition)).forEach(cp -> {
-            labels.add(String.valueOf(cp.getLabel()));
-            labelByProblem.put(cp.getProblem().getId(), String.valueOf(cp.getLabel()));
-        });
+        contest.getProblems().stream()
+                .filter(cp -> cp.getProblem().getStatus() != ProblemStatus.DELETED.getValue())
+                .sorted(Comparator.comparingInt(ContestProblem::getPosition))
+                .forEach(cp -> {
+                    labels.add(String.valueOf(cp.getLabel()));
+                    labelByProblem.put(cp.getProblem().getId(), String.valueOf(cp.getLabel()));
+                });
         boolean upcoming = ContestPhase.of(contest.getStartsAt(), contest.getEndsAt(), clock.instant())
                 == ContestPhase.UPCOMING;
         List<ScoreRow> rows = upcoming && !editor ? List.of()

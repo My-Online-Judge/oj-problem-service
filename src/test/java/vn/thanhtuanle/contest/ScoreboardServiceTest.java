@@ -213,6 +213,39 @@ class ScoreboardServiceTest extends PostgresTest {
     }
 
     /**
+     * A problem soft-deleted after it was attached is no column and counts for no one, editors included, as the public
+     * detail and the list count leave it out: B goes, so bob's B solve no longer puts him ahead, and carol, who solved
+     * only B, is not listed.
+     */
+    @Test
+    void aProblemDeletedAfterItWasAttachedIsNoColumnAndDoesNotCount() {
+        String a = problem(), b = problem(), c = problem();
+        String slug = contest(ContestStatus.PUBLISHED, a, b, c);
+        UUID alice = UUID.randomUUID(), bob = UUID.randomUUID(), carol = UUID.randomUUID();
+        score(slug, alice, a, 0, T.plus(Duration.ofMinutes(10)));
+        score(slug, bob, a, 0, T.plus(Duration.ofMinutes(20)));
+        score(slug, bob, b, 0, T.plus(Duration.ofMinutes(5)));
+        score(slug, bob, c, 1, null);
+        score(slug, carol, b, 2, T.plus(Duration.ofMinutes(30)));
+        jdbc.update("UPDATE t_problems SET status = ? WHERE problem_slug = ?", ProblemStatus.DELETED.getValue(), b);
+        when(users.byIds(anyCollection())).thenReturn(Map.of());
+        running();
+
+        for (boolean editor : new boolean[] {false, true}) {
+            ScoreboardResponse board = scoreboards.scoreboard(slug, editor);
+
+            assertThat(board.labels()).as("editor=%s", editor).containsExactly("A", "C");
+            assertThat(board.rows()).as("editor=%s", editor)
+                    .extracting(r -> r.user().id(), ScoreboardRow::rank, ScoreboardRow::solved, ScoreboardRow::penalty,
+                            ScoreboardRow::problems)
+                    .containsExactly(
+                            tuple(alice, 1, 1, 10L, Map.of("A", new ProblemCell(true, 1, 10L))),
+                            tuple(bob, 2, 1, 20L, Map.of("A", new ProblemCell(true, 1, 20L),
+                                    "C", new ProblemCell(false, 1, null))));
+        }
+    }
+
+    /**
      * Task 12 keeps a (0 attempts, no AC) row for a contestant whose contest submissions were only compile or system
      * errors. The brief leaves out users with nothing counted, so such a contestant is not listed.
      */
