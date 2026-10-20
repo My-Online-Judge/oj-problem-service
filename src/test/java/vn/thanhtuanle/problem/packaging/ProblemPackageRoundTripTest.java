@@ -199,6 +199,69 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
         assertThat(json.at("/problem/problemSlug").textValue()).isEqualTo(slug);
     }
 
+    /** Stored input text, output text and sample flag of every test case, in a stable order. */
+    private List<String> contents(String slug) {
+        return jdbc.query("""
+                SELECT tc.input, tc.output, tc.is_sample FROM t_test_cases tc JOIN t_problems p ON p.id = tc.problem_id
+                WHERE p.problem_slug = ?""", (rs, i) -> new String(sources.files.get(rs.getString(1)), StandardCharsets.UTF_8)
+                + " | " + new String(sources.files.get(rs.getString(2)), StandardCharsets.UTF_8)
+                + " | " + (rs.getBoolean(3) ? "sample" : "hidden"), slug)
+                .stream().sorted().toList();
+    }
+
+    /**
+     * Names the import would drop (a dot, a space, over 64 characters) and a second row named like the first are
+     * renamed to the next free integers, in plan order, so the copy keeps every test case and its sample flag.
+     */
+    @Test
+    void exportRenamesWhatTheImportWouldDrop() throws Exception {
+        String slug = newSlug("odd");
+        String copy = slug + "-copy";
+        String longName = "x".repeat(65);
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        for (String name : List.of("1", "2", "10", "case 1", "test.1", longName)) {
+            files.put(name + ".in", utf8("in " + name + "\n"));
+            files.put(name + ".out", utf8("out " + name + "\n"));
+        }
+        problems.createProblem(CreateProblemDto.builder().title("Odd names").subject("s").timeLimit(1000).memoryLimit(64)
+                .hardnessLevel(1).problemSlug(slug).inputDescription("i").outputDescription("o").sampleInput("1")
+                .sampleOutput("1").status(ProblemStatus.INACTIVE).build(),
+                new MockMultipartFile("file", "cases.zip", "application/zip", zip(files)));
+        // A row from before today's naming, stored in a folder: its name is 2 as well.
+        jdbc.update("""
+                INSERT INTO t_test_cases (id, problem_id, created_at, updated_at, input, output, is_sample)
+                SELECT gen_random_uuid(), id, now(), now(), ?, ?, false FROM t_problems WHERE problem_slug = ?""",
+                slug + "/extra/2.in", slug + "/extra/2.out", slug);
+        sources.put(slug + "/extra/2.in", utf8("in extra 2\n"));
+        sources.put(slug + "/extra/2.out", utf8("out extra 2\n"));
+        jdbc.update("UPDATE t_test_cases SET is_sample = (input = ?) WHERE input LIKE ?", slug + "/test.1.in", slug + "/%");
+
+        byte[] pkg = export(slug);
+
+        Map<String, byte[]> entries = unzip(pkg);
+        List<String> expected = new ArrayList<>(List.of("problem.json"));
+        for (String name : List.of("1", "2", "10", "11", "12", "13", "14")) {
+            expected.add("testcases/" + name + ".in");
+            expected.add("testcases/" + name + ".out");
+        }
+        assertThat(entries.keySet()).containsExactlyElementsOf(expected);
+        assertThat(entries.get("testcases/2.in")).isEqualTo(utf8("in 2\n"));
+        assertThat(entries.get("testcases/11.in")).isEqualTo(utf8("in extra 2\n"));
+        assertThat(entries.get("testcases/12.out")).isEqualTo(utf8("out case 1\n"));
+        assertThat(entries.get("testcases/13.in")).isEqualTo(utf8("in test.1\n"));
+        assertThat(entries.get("testcases/14.in")).isEqualTo(utf8("in " + longName + "\n"));
+        List<String> samples = new ArrayList<>();
+        objectMapper.readTree(entries.get("problem.json")).get("samples").forEach(n -> samples.add(n.textValue()));
+        assertThat(samples).containsExactly("13");
+
+        mvc.perform(multipart("/api/v1/problems/import")
+                        .file(new MockMultipartFile("file", slug + ".zip", "application/zip", pkg))
+                        .param("slugOverride", copy)
+                        .with(admin("problem:create")))
+                .andExpect(status().isCreated());
+        assertThat(contents(copy)).hasSize(7).isEqualTo(contents(slug));
+    }
+
     @Test
     void exportOfAnUnknownSlugIs404() throws Exception {
         mvc.perform(get(EXPORT, PREFIX + "no-such-problem").with(admin("problem:update")))

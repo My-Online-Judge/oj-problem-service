@@ -51,6 +51,8 @@ public class ProblemPackageService {
     private static final String OUT = AppProperties.OUTPUT_FILE_EXTENSION;
     /** A test case name; anything else is ignored, such as the {@code ._1.in} resource forks of a zip made on macOS. */
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
+    /** A name that counts as a test-case number, like V6's high-water mark: at most 9 digits, so never an overflow. */
+    private static final Pattern NUMBER = Pattern.compile("^[0-9]{1,9}$");
 
     private final ProblemRepository problemRepository;
     private final ProblemService problemService;
@@ -110,9 +112,39 @@ public class ProblemPackageService {
                 .build();
         List<PlannedTestCase> testCases = problem.getTestCases().stream()
                 .map(tc -> new PlannedTestCase(nameOf(tc.getInput()), tc.getInput(), tc.getOutput(), tc.isSample()))
-                .sorted(byName(PlannedTestCase::name))
+                .sorted(byName(PlannedTestCase::name).thenComparing(PlannedTestCase::inputPath))
                 .toList();
-        return new PackagePlan(dto, testCases);
+        return new PackagePlan(dto, withImportableNames(testCases));
+    }
+
+    /**
+     * The test cases under names the import accepts, each name once, so that a copy loses no test case. A name that
+     * fails {@link #NAME} (older uploads kept any file name), or repeats an earlier one, becomes the next free integer
+     * above the largest numeric name, in plan order; the sample flag goes with it.
+     */
+    private static List<PlannedTestCase> withImportableNames(List<PlannedTestCase> testCases) {
+        Set<String> taken = new HashSet<>();
+        List<Integer> toRename = new ArrayList<>();
+        for (int i = 0; i < testCases.size(); i++) {
+            String name = testCases.get(i).name();
+            if (!NAME.matcher(name).matches() || !taken.add(name)) {
+                toRename.add(i);
+            }
+        }
+        if (toRename.isEmpty()) {
+            return testCases;
+        }
+        int next = taken.stream().filter(n -> NUMBER.matcher(n).matches()).mapToInt(Integer::parseInt).max().orElse(0);
+        List<PlannedTestCase> renamed = new ArrayList<>(testCases);
+        for (int i : toRename) {
+            do {
+                next++;
+            } while (taken.contains(String.valueOf(next)));
+            PlannedTestCase tc = renamed.get(i);
+            renamed.set(i, new PlannedTestCase(String.valueOf(next), tc.inputPath(), tc.outputPath(), tc.sample()));
+        }
+        renamed.sort(byName(PlannedTestCase::name));
+        return renamed;
     }
 
     /** The second phase of an export: the zip, from the plan and the stored files, with no transaction. */
