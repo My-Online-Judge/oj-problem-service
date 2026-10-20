@@ -12,6 +12,11 @@ spring:
       max-request-size: 55MB
   jackson:
     time-zone: Asia/Ho_Chi_Minh
+  mvc:
+    async:
+      # A package export streams asynchronously; Tomcat's default (30 s) would cut a large one off. The portal waits
+      # 120 s, and the gateway sets no response timeout, so this is the limit end to end.
+      request-timeout: 120s
   jpa:
     # Off: with open-in-view the request's EntityManager keeps the JDBC connection it first used until the response
     # is written, so a package export would hold one through its whole stream of MinIO reads. Every HTTP path reads
