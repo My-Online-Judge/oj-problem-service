@@ -21,6 +21,25 @@ public class ContestScoreRepository {
                 rs.getInt("attempts_before_ac"), acceptedAt == null ? null : acceptedAt.toInstant());
     };
 
+    /**
+     * Over the contestant's verdicts on the problem ({@code t_processed_verdicts}, each with its current
+     * {@code last_status}): {@code accepted_at} is the earliest submit time of an accepted one, or null;
+     * {@code attempts_before_ac} counts the others submitted before it (all of them while there is none), compile
+     * errors (-2) and system errors (5) left out.
+     */
+    private static final String RECOMPUTE = """
+            INSERT INTO t_contest_scores (contest_id, user_id, problem_id, attempts_before_ac, accepted_at)
+            SELECT :contestId, :userId, :problemId,
+                   count(*) FILTER (WHERE v.last_status NOT IN (0, -2, 5) AND (f.first_ac IS NULL OR v.submitted_at < f.first_ac)),
+                   f.first_ac
+            FROM t_processed_verdicts v
+            CROSS JOIN (SELECT min(submitted_at) AS first_ac FROM t_processed_verdicts
+                        WHERE contest_id = :contestId AND user_id = :userId AND problem_id = :problemId AND last_status = 0) f
+            WHERE v.contest_id = :contestId AND v.user_id = :userId AND v.problem_id = :problemId
+            GROUP BY f.first_ac
+            ON CONFLICT (contest_id, user_id, problem_id)
+            DO UPDATE SET attempts_before_ac = EXCLUDED.attempts_before_ac, accepted_at = EXCLUDED.accepted_at""";
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public List<ScoreRow> findByContestAndUser(UUID contestId, UUID userId) {
@@ -28,5 +47,23 @@ public class ContestScoreRepository {
                 SELECT user_id, problem_id, attempts_before_ac, accepted_at
                 FROM t_contest_scores WHERE contest_id = :contestId AND user_id = :userId""",
                 Map.of("contestId", contestId, "userId", userId), ROW);
+    }
+
+    /**
+     * Whether the contest exists. If it does, its row stays held (FOR KEY SHARE) until the transaction ends: a delete
+     * of the contest waits for this transaction, so a score row written meanwhile cannot fail its foreign key, and a
+     * delete already in flight is waited for, after which the contest reads as gone.
+     */
+    public boolean lockContest(UUID contestId) {
+        return !jdbc.queryForList("SELECT 1 FROM t_contests WHERE id = :contestId FOR KEY SHARE",
+                Map.of("contestId", contestId), Integer.class).isEmpty();
+    }
+
+    /**
+     * Rewrites the contestant's row on the problem from all of their verdicts there, so it ends the same whatever
+     * the order the verdicts came in, however often each came, and after a rejudge.
+     */
+    public void recompute(UUID contestId, UUID userId, UUID problemId) {
+        jdbc.update(RECOMPUTE, Map.of("contestId", contestId, "userId", userId, "problemId", problemId));
     }
 }

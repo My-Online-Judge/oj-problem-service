@@ -31,7 +31,10 @@ Statistics: `t_problem_stats` holds, per problem, how many submissions ended wit
 terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group
 `problem-service-stats` keeps it from `oj.submission.events` (`SubmissionVerdictRecorded`, published by
 submission-service's outbox): one transaction per event, counted once per submission (`t_processed_verdicts`),
-verdicts of unknown problems skipped. A record it cannot read goes straight to
+verdicts of unknown problems skipped. The same transaction keeps contest scores (`t_contest_scores`): a
+verdict that names its contest, submitter and submit time is noted on its `t_processed_verdicts` row, and the
+submitter's score on that problem is recomputed from all such rows (`accepted_at` = the first accepted submit
+time; compile and system errors never count). A record it cannot read goes straight to
 `oj.submission.events.dlq`; any other failure (the database restarting, a lock) is retried with a growing
 pause, 1 s doubling to 30 s, for about 5.5 minutes before it is dead-lettered too. Each dead-lettered record
 increments `oj_stats_dead_lettered_total` (alert `ProblemStatsDeadLettered`).
@@ -43,9 +46,9 @@ Replaying the dead letters once the cause is fixed — from the `judge-deploymen
 The script copies the records, keys included, through the broker's loopback listener; its consumer group
 `dlq-replay` commits offsets, so a second run copies only records not copied before. It is safe for first
 verdicts: a submission is counted once however often its event arrives. A REJUDGE event replayed after a newer
-rejudge of the same submission moves the statistics back to the older verdict (the event has no ordering
-field): replay rejudge events only when no newer rejudge happened for those submissions, or run
-`scripts/stats-check.sh` afterwards.
+rejudge of the same submission moves the statistics, and its contest score, back to the older verdict (the event
+has no ordering field): replay rejudge events only when no newer rejudge happened for those submissions, or run
+`scripts/stats-check.sh` afterwards (it checks the counts, not contest scores).
 
 ## Build and test
 

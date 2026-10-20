@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import vn.thanhtuanle.entity.ProcessedVerdict;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,4 +27,20 @@ public interface ProcessedVerdictRepository extends JpaRepository<ProcessedVerdi
     /** The submission's row, locked until the transaction ends: two verdicts of one submission take turns. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<ProcessedVerdict> findForUpdateBySubmissionId(UUID submissionId);
+
+    /**
+     * Puts the contest submission's contest, submitter, problem and submit time on its row (V7's columns, which the
+     * entity does not map): its contest score is recomputed from these rows. Flushes the persistence context first,
+     * so that a rejudge's new {@code last_status} is in the table before that recompute (plain SQL) reads it.
+     *
+     * @return 1, or 0 when the submission has no row
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            UPDATE t_processed_verdicts
+            SET contest_id = :contestId, user_id = :userId, problem_id = :problemId, submitted_at = :submittedAt
+            WHERE submission_id = :submissionId""", nativeQuery = true)
+    int attachContest(@Param("submissionId") UUID submissionId, @Param("contestId") UUID contestId,
+                      @Param("userId") UUID userId, @Param("problemId") UUID problemId,
+                      @Param("submittedAt") Instant submittedAt);
 }

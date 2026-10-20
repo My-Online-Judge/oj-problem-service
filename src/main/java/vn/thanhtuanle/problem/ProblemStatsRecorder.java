@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.thanhtuanle.contest.ContestScoreRecorder;
 import vn.thanhtuanle.entity.ProcessedVerdict;
 import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
 
@@ -14,7 +15,9 @@ import java.util.Optional;
  * Adds a terminal verdict to its problem's statistics, once per submission: the events arrive at least
  * once (outbox relay retries, consumer re-deliveries), so the submission id is recorded in the same
  * transaction as the count, with the verdict it is counted under. A rejudge moves the submission's count
- * from that verdict to the new one.
+ * from that verdict to the new one. Every verdict of a known problem then goes on, in the same transaction, to
+ * the contest scores ({@link ContestScoreRecorder}): duplicates and unchanged rejudges too, since a score is
+ * recomputed from all of its verdicts and so can be recomputed any number of times.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,6 +27,7 @@ public class ProblemStatsRecorder {
     private final ProblemRepository problemRepository;
     private final ProblemStatRepository problemStatRepository;
     private final ProcessedVerdictRepository processedVerdictRepository;
+    private final ContestScoreRecorder contestScores;
 
     /**
      * @return true when the counts changed; false for a duplicate, a rejudge that changes nothing, or a problem
@@ -35,7 +39,9 @@ public class ProblemStatsRecorder {
             log.warn("Verdict of submission {} skipped: unknown problem {}", event.submissionId(), event.problemId());
             return false;
         }
-        return event.rejudge() ? recordRejudge(event) : recordFirst(event);
+        boolean counted = event.rejudge() ? recordRejudge(event) : recordFirst(event);
+        contestScores.onVerdict(event);
+        return counted;
     }
 
     private boolean recordFirst(SubmissionVerdictRecorded event) {
