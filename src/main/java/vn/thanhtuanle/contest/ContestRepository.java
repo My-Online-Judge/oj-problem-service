@@ -37,9 +37,10 @@ public interface ContestRepository extends JpaRepository<Contest, UUID> {
     Optional<Contest> findBySlugContaining(@Param("contestSlug") String contestSlug,
             @Param("problemSlug") String problemSlug);
 
-    /** Contests of these statuses that have not ended at {@code now}: running or upcoming. */
-    @Query("SELECT c FROM Contest c WHERE c.status IN :statuses AND c.endsAt > :now")
-    List<Contest> findNotEndedAt(@Param("statuses") Collection<ContestStatus> statuses, @Param("now") Instant now);
+    /** Contests of these statuses that have not ended at {@code now} (running or upcoming), the earliest start first. */
+    @Query("SELECT c FROM Contest c WHERE c.status IN :statuses AND c.endsAt > :now ORDER BY c.startsAt, c.slug")
+    List<Contest> findNotEndedAt(@Param("statuses") Collection<ContestStatus> statuses, @Param("now") Instant now,
+            Pageable page);
 
     /** Contests of these statuses that have ended at {@code now}, the latest end first. */
     @Query("SELECT c FROM Contest c WHERE c.status IN :statuses AND c.endsAt <= :now ORDER BY c.endsAt DESC, c.slug")

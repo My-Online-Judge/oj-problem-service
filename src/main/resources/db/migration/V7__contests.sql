@@ -11,6 +11,7 @@ CREATE TABLE t_contests (
     CONSTRAINT ck_contests_window CHECK (ends_at > starts_at)
 );
 CREATE UNIQUE INDEX ux_contests_slug ON t_contests (slug);
+CREATE INDEX ix_contests_ends_at ON t_contests (ends_at);
 CREATE TABLE t_contest_problems (
     contest_id uuid NOT NULL REFERENCES t_contests (id) ON DELETE CASCADE,
     problem_id uuid NOT NULL REFERENCES t_problems (id),

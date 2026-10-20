@@ -290,6 +290,28 @@ class ContestServiceTest extends PostgresTest {
         assertThat(past.get(49).slug()).isEqualTo(ended.get(1));
     }
 
+    /** Running and upcoming together are capped like past, keeping the soonest. */
+    @Test
+    void notEndedIsCappedAt50SoonestFirst() {
+        clock.set(T);
+        String p = problem();
+        List<String> upcoming = new ArrayList<>();
+        for (int i = 0; i <= 50; i++) {
+            String slug = slug("upcoming-" + i);
+            Instant start = T.plus(Duration.ofHours(1 + i));
+            contests.create(request(slug, start, start.plus(Duration.ofMinutes(30)), ContestStatus.PUBLISHED, List.of(p)),
+                    true);
+            upcoming.add(slug);
+        }
+        persisted();
+
+        List<ContestSummary> listed = contests.list(false).upcoming();
+
+        assertThat(listed).hasSize(50);
+        assertThat(listed.get(0).slug()).isEqualTo(upcoming.get(0));
+        assertThat(listed.get(49).slug()).isEqualTo(upcoming.get(49));
+    }
+
     // --- detail ---
 
     @Test

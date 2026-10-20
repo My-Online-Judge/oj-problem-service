@@ -30,6 +30,13 @@ class ProblemSchemaTest extends PostgresTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM t_problems", Integer.class)).isZero();
     }
 
+    /** The contest list reads by end time (running, upcoming and past are all split at ends_at). */
+    @Test
+    void v7IndexesContestsByEnd() {
+        assertThat(jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_contests_ends_at'",
+                String.class)).endsWith("ON public.t_contests USING btree (ends_at)");
+    }
+
     /** V6 reads the numbers out of the stored paths (<code>slug/N.in</code>), ignoring names that are not numbers. */
     @Test
     void v6BackfillsTheHighWaterMark() throws Exception {

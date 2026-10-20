@@ -53,6 +53,8 @@ public class ContestService {
 
     static final int MAX_PROBLEMS = 26;
     static final int PAST_LIMIT = 50;
+    /** Running and upcoming contests together, the earliest start first (so running ones before upcoming). */
+    static final int NOT_ENDED_LIMIT = 50;
     private static final String SLUG_INDEX = "ux_contests_slug";
 
     private final ContestRepository contests;
@@ -62,14 +64,17 @@ public class ContestService {
     private final ProblemService problemService;
     private final Clock clock;
 
-    /** PUBLISHED contests (and DRAFT ones for editors) by phase; past ones newest first, at most 50. */
+    /**
+     * PUBLISHED contests (and DRAFT ones for editors) by phase: running and upcoming ones, at most 50 together and the
+     * soonest kept; past ones newest first, at most 50.
+     */
     @Transactional(readOnly = true)
     public ContestListResponse list(boolean editor) {
         Instant now = clock.instant();
         List<ContestStatus> statuses = editor
                 ? List.of(ContestStatus.DRAFT, ContestStatus.PUBLISHED)
                 : List.of(ContestStatus.PUBLISHED);
-        List<Contest> notEnded = contests.findNotEndedAt(statuses, now);
+        List<Contest> notEnded = contests.findNotEndedAt(statuses, now, PageRequest.of(0, NOT_ENDED_LIMIT));
         List<Contest> past = contests.findEndedAt(statuses, now, PageRequest.of(0, PAST_LIMIT));
         Map<UUID, Integer> counts = problemCounts(Stream.concat(notEnded.stream(), past.stream()).toList());
 
