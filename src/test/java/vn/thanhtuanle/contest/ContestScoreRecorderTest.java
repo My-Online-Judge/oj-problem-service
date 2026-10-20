@@ -1,7 +1,10 @@
 package vn.thanhtuanle.contest;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -257,16 +260,24 @@ class ContestScoreRecorderTest extends PostgresTest {
         assertThat(count(k.problemId(), AC)).isEqualTo(1L);
     }
 
+    /** Producers from 0.8.0 on always send both, so a contest verdict without either is a producer bug: a WARN. */
     @Test
-    void aContestVerdictWithoutItsSubmitterOrSubmitTimeIsSkipped() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void aContestVerdictWithoutItsSubmitterOrSubmitTimeIsSkipped(CapturedOutput output) {
         Key k = key();
+        UUID noSubmitter = UUID.randomUUID();
+        UUID noSubmitTime = UUID.randomUUID();
 
-        recorder.record(new SubmissionVerdictRecorded(UUID.randomUUID(), k.problemId(), AC, false, null,
+        recorder.record(new SubmissionVerdictRecorded(noSubmitter, k.problemId(), AC, false, null,
                 k.contestId(), at(10)));
-        recorder.record(new SubmissionVerdictRecorded(UUID.randomUUID(), k.problemId(), WA, false, k.userId(),
+        recorder.record(new SubmissionVerdictRecorded(noSubmitTime, k.problemId(), WA, false, k.userId(),
                 k.contestId(), null));
 
         assertThat(scoreRowsOf(k.problemId())).isZero();
+        for (UUID submissionId : List.of(noSubmitter, noSubmitTime)) {
+            assertThat(output.getOut().lines().filter(line -> line.contains(submissionId.toString())))
+                    .anyMatch(line -> line.contains("WARN") && line.contains("keeps no score"));
+        }
     }
 
     /**

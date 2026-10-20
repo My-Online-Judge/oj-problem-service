@@ -33,8 +33,9 @@ public class ContestScoreRecorder {
             return;
         }
         if (e.userId() == null || e.submittedAt() == null) {
-            log.debug("Verdict of submission {} keeps no contest score (contest {}, user {}, submitted at {})",
-                    e.submissionId(), e.contestId(), e.userId(), e.submittedAt());
+            // Producers from 0.8.0 on always send both with a contest: a producer bug, not a practice verdict.
+            log.warn("Contest verdict of submission {} keeps no score: no submitter ({}) or submit time ({}), contest {}",
+                    e.submissionId(), e.userId(), e.submittedAt(), e.contestId());
             return;
         }
         // Locks the contest until this transaction ends: score writes in it take turns, and the score row's foreign
