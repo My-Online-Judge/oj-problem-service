@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -12,14 +13,18 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import vn.thanhtuanle.common.enums.ProblemStatus;
+import vn.thanhtuanle.problem.CheckerService;
 import vn.thanhtuanle.problem.ProblemService;
 import vn.thanhtuanle.problem.dto.CreateProblemDto;
+import vn.thanhtuanle.testcase.BundleFile;
 import vn.thanhtuanle.testcase.TestCaseBundleException;
 
 import javax.sql.DataSource;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -65,6 +71,7 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
     @Autowired ProblemService problems;
     @Autowired ObjectMapper objectMapper;
     @Autowired DataSource dataSource;
+    @Autowired CheckerService checkers;
 
     private static RequestPostProcessor admin(String authority) {
         return user("admin").authorities(new SimpleGrantedAuthority(authority));
@@ -260,6 +267,86 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
                         .with(admin("problem:create")))
                 .andExpect(status().isCreated());
         assertThat(contents(copy)).hasSize(7).isEqualTo(contents(slug));
+    }
+
+    private static final String CHECKER = """
+            #include <fstream>
+            int main(int argc, char** argv) {
+                std::ifstream in(argv[1]), out(argv[2]);
+                long long n, x, sum = 0, answer;
+                in >> n;
+                while (n-- > 0 && in >> x) sum += x;
+                return (out >> answer) && answer == sum ? 0 : 1;
+            }
+            """;
+
+    private static String sha256(byte[] content) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+    }
+
+    /** The info file of the last bundle published for this slug. */
+    private String publishedInfo(String slug) {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BundleFile>> files = ArgumentCaptor.forClass(List.class);
+        verify(bundleStore, atLeastOnce()).publish(eq(slug), files.capture());
+        return files.getValue().stream().filter(f -> f.name().equals("info")).findFirst()
+                .map(f -> new String(f.content(), StandardCharsets.UTF_8)).orElseThrow();
+    }
+
+    /**
+     * A checker problem's package carries {@code spj.cpp} at its root, and the import makes the copy a checker problem
+     * with the same source and version. The plan's existence check and the stream's read of the checker hold no
+     * connection either.
+     */
+    @Test
+    void roundTripKeepsTheChecker() throws Exception {
+        String slug = newSlug("rt");
+        String copy = slug + "-copy";
+        seed(slug);
+        byte[] checker = utf8(CHECKER);
+        checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", checker));
+        clearInvocations(bundleStore);
+        HikariPoolMXBean pool = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
+        List<Integer> activeWhileCalling = new CopyOnWriteArrayList<>();
+        sources.beforeRead = () -> activeWhileCalling.add(pool.getActiveConnections());
+
+        byte[] pkg = export(slug);
+
+        sources.beforeRead = () -> { };
+        assertThat(activeWhileCalling).hasSize(4 * CASES.size() + 2).containsOnly(0);
+        Map<String, byte[]> entries = unzip(pkg);
+        assertThat(entries.keySet()).containsExactly("problem.json", "spj.cpp", "testcases/1.in", "testcases/1.out",
+                "testcases/2.in", "testcases/2.out", "testcases/10.in", "testcases/10.out");
+        assertThat(entries.get("spj.cpp")).isEqualTo(checker);
+
+        mvc.perform(multipart("/api/v1/problems/import")
+                        .file(new MockMultipartFile("file", slug + ".zip", "application/zip", pkg))
+                        .param("slugOverride", copy)
+                        .with(admin("problem:create")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.spj").value(true));
+
+        String version = sha256(checker);
+        assertThat(jdbc.queryForMap("SELECT spj, spj_version FROM t_problems WHERE problem_slug = ?", copy))
+                .containsEntry("spj", true).containsEntry("spj_version", version);
+        assertThat(sources.files.get(copy + "/spj.cpp")).isEqualTo(checker);
+        verify(bundleStore, times(1)).publish(anyString(), anyList());
+        assertThat(publishedInfo(copy)).contains("\"spj\" : true").contains("\"spj_version\" : \"" + version + "\"");
+    }
+
+    @Test
+    void missingCheckerSourceFailsBeforeStreaming() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+        checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", utf8(CHECKER)));
+        sources.files.remove(slug + "/spj.cpp");
+
+        assertThatThrownBy(() -> packages.plan(slug))
+                .isInstanceOf(TestCaseBundleException.class)
+                .hasMessageContaining(slug + "/spj.cpp");
+        mvc.perform(get(EXPORT, slug).with(admin("problem:update")))
+                .andExpect(request().asyncNotStarted())
+                .andExpect(status().isInternalServerError());
     }
 
     @Test

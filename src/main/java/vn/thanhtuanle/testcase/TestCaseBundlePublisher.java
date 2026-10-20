@@ -11,7 +11,8 @@ import java.util.List;
 /**
  * Builds a problem's judge bundle from its test-case rows and their stored files. The rows decide what
  * is in the bundle: a row whose file is missing fails the publish instead of silently leaving the test
- * case out (which is how tests 2–4 of simple-a-plus-b vanished from judging).
+ * case out (which is how tests 2–4 of simple-a-plus-b vanished from judging). A problem judged by a checker gets the
+ * checker's version in its bundle's {@code info} ({@link TestCaseBundleBuilder#build(List, String)}).
  */
 @Component
 @RequiredArgsConstructor
@@ -40,7 +41,7 @@ public class TestCaseBundlePublisher {
         if (pairs.isEmpty()) {
             throw new TestCaseBundleException("Problem " + problem.getProblemSlug() + " has no test cases");
         }
-        return TestCaseBundleBuilder.build(pairs);
+        return TestCaseBundleBuilder.build(pairs, problem.isSpj() ? problem.getSpjVersion() : null);
     }
 
     private byte[] read(String path) {

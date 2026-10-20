@@ -79,14 +79,26 @@ public class ProblemService {
         return saveAndPublish(problem);
     }
 
-    /**
-     * Creates a problem from an imported package, by {@link #createProblem}'s rules. Each test case keeps its package
-     * name ({@code <slug>/<name>.in|out}) and its sample flag.
-     */
+    /** {@link #createFromPackage(CreateProblemDto, List, byte[])} for a package without a checker. */
     @Transactional
     public ProblemResponseDto createFromPackage(CreateProblemDto dto, List<PackagedTestCase> cases) {
+        return createFromPackage(dto, cases, null);
+    }
+
+    /**
+     * Creates a problem from an imported package, by {@link #createProblem}'s rules. Each test case keeps its package
+     * name ({@code <slug>/<name>.in|out}) and its sample flag. A {@code checkerSource} (null: none) follows an upload's
+     * rules ({@link CheckerService#requireValidSource}); it is stored and the problem marked as judged by it before the
+     * bundle is published, so the first bundle already carries it.
+     */
+    @Transactional
+    public ProblemResponseDto createFromPackage(CreateProblemDto dto, List<PackagedTestCase> cases,
+                                                byte[] checkerSource) {
         log.info("Start createFromPackage for: {}", dto.getProblemSlug());
 
+        if (checkerSource != null) {
+            CheckerService.requireValidSource(checkerSource);
+        }
         validateNewProblem(dto);
         Problem problem = claimSlug(newProblem(dto)); // before any file is written, as in createProblem
 
@@ -101,6 +113,11 @@ public class ProblemService {
                     .sample(tc.sample())
                     .problem(problem)
                     .build());
+        }
+        if (checkerSource != null) {
+            sources.put(CheckerService.checkerPath(problem.getProblemSlug()), checkerSource);
+            problem.setSpj(true);
+            problem.setSpjVersion(CheckerService.versionOf(checkerSource));
         }
         return saveAndPublish(problem);
     }

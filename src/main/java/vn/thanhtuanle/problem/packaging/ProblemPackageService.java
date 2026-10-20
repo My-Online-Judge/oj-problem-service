@@ -16,6 +16,7 @@ import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.common.util.FileUtil;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
+import vn.thanhtuanle.problem.CheckerService;
 import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.problem.ProblemService;
 import vn.thanhtuanle.problem.dto.CreateProblemDto;
@@ -38,7 +39,8 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * Problem packages, format v1: a zip of {@code problem.json} ({@link ProblemPackage}) and the test cases as
- * {@code testcases/<name>.in} and {@code testcases/<name>.out}.
+ * {@code testcases/<name>.in} and {@code testcases/<name>.out}, plus {@code spj.cpp} at the root for a problem judged
+ * by a checker.
  */
 @Service
 @RequiredArgsConstructor
@@ -61,8 +63,11 @@ public class ProblemPackageService {
     private final Validator validator;
     private final PlatformTransactionManager transactionManager;
 
-    /** Everything an export writes, read before the response streams; {@link #write} needs no database. */
-    public record PackagePlan(CreateProblemDto problem, List<PlannedTestCase> testCases) {
+    /**
+     * Everything an export writes, read before the response streams; {@link #write} needs no database.
+     * {@code checkerPath} is where the problem's checker source is stored, or null without a checker.
+     */
+    public record PackagePlan(CreateProblemDto problem, List<PlannedTestCase> testCases, String checkerPath) {
 
         ProblemPackage toPackage() {
             List<String> samples = testCases.stream().filter(PlannedTestCase::sample).map(PlannedTestCase::name).toList();
@@ -86,6 +91,10 @@ public class ProblemPackageService {
         for (PlannedTestCase tc : plan.testCases()) {
             requireStored(tc.inputPath());
             requireStored(tc.outputPath());
+        }
+        if (plan.checkerPath() != null && !sources.exists(plan.checkerPath())) {
+            throw new TestCaseBundleException(
+                    "Checker source " + plan.checkerPath() + " is not stored; upload the checker again");
         }
         return plan;
     }
@@ -114,7 +123,8 @@ public class ProblemPackageService {
                 .map(tc -> new PlannedTestCase(nameOf(tc.getInput()), tc.getInput(), tc.getOutput(), tc.isSample()))
                 .sorted(byName(PlannedTestCase::name).thenComparing(PlannedTestCase::inputPath))
                 .toList();
-        return new PackagePlan(dto, withImportableNames(testCases));
+        return new PackagePlan(dto, withImportableNames(testCases),
+                problem.isSpj() ? CheckerService.checkerPath(problem.getProblemSlug()) : null);
     }
 
     /**
@@ -151,6 +161,10 @@ public class ProblemPackageService {
     public void write(PackagePlan plan, OutputStream out) throws IOException {
         ZipOutputStream zip = new ZipOutputStream(out);
         putEntry(zip, PROBLEM_JSON, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(plan.toPackage()));
+        if (plan.checkerPath() != null) {
+            putEntry(zip, CheckerService.CHECKER_FILE, sources.get(plan.checkerPath()).orElseThrow(
+                    () -> new TestCaseBundleException("Checker source " + plan.checkerPath() + " is not stored")));
+        }
         for (PlannedTestCase tc : plan.testCases()) {
             putEntry(zip, TEST_CASE_DIR + tc.name() + IN, read(tc.inputPath()));
             putEntry(zip, TEST_CASE_DIR + tc.name() + OUT, read(tc.outputPath()));
@@ -160,7 +174,8 @@ public class ProblemPackageService {
 
     /**
      * Creates a new problem from a package. Entries are matched by file name, whatever their folder; {@code slugOverride},
-     * when given, replaces the package's slug before the problem is validated.
+     * when given, replaces the package's slug before the problem is validated. An {@code spj.cpp} makes the problem a
+     * checker problem, by an upload's rules.
      */
     public ProblemResponseDto importPackage(MultipartFile file, String slugOverride) throws IOException {
         Map<String, byte[]> entries = FileUtil.extractZip(file);
@@ -186,7 +201,7 @@ public class ProblemPackageService {
             throw new IllegalArgumentException("Package has no test cases");
         }
         log.info("Importing package as problem {} with {} test cases", dto.getProblemSlug(), testCases.size());
-        return problemService.createFromPackage(dto, testCases);
+        return problemService.createFromPackage(dto, testCases, entries.get(CheckerService.CHECKER_FILE));
     }
 
     private ProblemPackage parse(byte[] json) throws IOException {

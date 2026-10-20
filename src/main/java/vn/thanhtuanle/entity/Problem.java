@@ -58,6 +58,14 @@ public class Problem extends BaseEntity {
     @Column(name = "test_case_high_water", nullable = false)
     private int testCaseHighWater;
 
+    /** Judged by a C++ checker (special judge), stored at {@code <slug>/spj.cpp}, instead of by comparing outputs. */
+    @Column(nullable = false)
+    private boolean spj;
+
+    /** The sha256 hex of the checker's source; null without a checker. */
+    @Column(length = 64)
+    private String spjVersion;
+
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "t_problem_tags", joinColumns = @JoinColumn(name = "problem_id"))
     @Column(name = "tag")

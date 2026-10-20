@@ -31,6 +31,8 @@ public class ProblemResponseDto extends BaseResponse {
     private String outputDescription;
     private String hint;
     private int status;
+    /** Judged by a checker (special judge) instead of by comparing outputs. */
+    private boolean spj;
     private Integer totalSubmission;
     private Integer acceptedSubmission;
     private Map<String, Integer> statisticInfo;

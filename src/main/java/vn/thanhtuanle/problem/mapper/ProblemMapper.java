@@ -23,6 +23,8 @@ public interface ProblemMapper {
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "createdBy", ignore = true)
     @Mapping(target = "updatedBy", ignore = true)
+    @Mapping(target = "spj", ignore = true)
+    @Mapping(target = "spjVersion", ignore = true)
     Problem toEntity(CreateProblemDto dto);
 
     default ProblemStatus map(int value) {

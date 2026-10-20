@@ -57,6 +57,24 @@ class TestCaseBundleBuilderGoldenTest {
         assertThat(TestCaseBundleStore.contentHash(files)).isEqualTo(OLD_CODE_HASH);
     }
 
+    /**
+     * A checker problem's info says {@code "spj" : true} and carries the checker's version, and nothing else differs.
+     * The version is in the info so that a new or changed checker always makes a new bundle: bundles installed before
+     * SP13 stay 0700 on the workers, where qduoj's spj user cannot read them (Task 16).
+     */
+    @Test
+    void infoMarksSpjWhenTheProblemHasAChecker() throws IOException {
+        String version = "0123456789abcdef".repeat(4);
+
+        String info = new String(TestCaseBundleBuilder.info(pairs(), version), StandardCharsets.UTF_8);
+
+        assertThat(info).contains("\"spj\" : true").contains("\"spj_version\" : \"" + version + "\"");
+        assertThat(info.replace("\"spj\" : true,\n  \"spj_version\" : \"" + version + "\"", "\"spj\" : false"))
+                .isEqualTo(new String(fixture("expected-info"), StandardCharsets.UTF_8));
+        assertThat(TestCaseBundleBuilder.build(pairs(), version)).filteredOn(f -> f.name().equals("info"))
+                .extracting(f -> new String(f.content(), StandardCharsets.UTF_8)).containsExactly(info);
+    }
+
     @Test
     void theOrderOfTheRowsDoesNotChangeTheBundle() throws IOException {
         List<TestCaseBundleBuilder.SourcePair> reversed = pairs();

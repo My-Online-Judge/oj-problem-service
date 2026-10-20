@@ -15,9 +15,11 @@ import vn.thanhtuanle.oj.common.grpc.problem.v1.ListVisibleSlugsResponse;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.ProblemInternalGrpc;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.SampleTestCase;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.SampleTestCases;
+import vn.thanhtuanle.problem.CheckerService;
 import vn.thanhtuanle.testcase.TestCaseBundleException;
 import vn.thanhtuanle.testcase.TestCaseBundleStore;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,7 +27,8 @@ import java.util.UUID;
  * The internal API the submission side calls (port 9090, oj-net only; GrpcServerConfig decides who may call).
  * Status codes are part of the contract: the caller's circuit breaker counts NOT_FOUND and FAILED_PRECONDITION
  * as answers, and retries only UNAVAILABLE. A contest submission that its contest cannot take is a FAILED_PRECONDITION
- * carrying {@link ProblemRpcReasons#contestNotRunning()}, so the caller tells it apart from a missing bundle.
+ * carrying {@link ProblemRpcReasons#contestNotRunning()}, so the caller tells it apart from a missing bundle. A problem
+ * judged by a checker whose source is missing is a FAILED_PRECONDITION too.
  */
 @Service
 @RequiredArgsConstructor
@@ -79,6 +82,26 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
                 .setMemoryLimitMb(p.memoryLimitMb())
                 .setTestCaseVersion(version.get());
         contestId.ifPresent(id -> spec.setContestId(id.toString()));
+        if (p.spj()) {
+            Optional<String> checker;
+            try {
+                checker = queries.checkerSource(slug);
+            } catch (TestCaseBundleException e) {
+                log.warn("Checker storage unreadable while serving the judge spec of {}: {}", slug, e.getMessage());
+                responseObserver.onError(Status.UNAVAILABLE.withDescription("Test-case storage unavailable")
+                        .asRuntimeException());
+                return;
+            }
+            if (checker.isEmpty()) {
+                responseObserver.onError(Status.FAILED_PRECONDITION
+                        .withDescription("Checker source missing for problem: " + slug).asRuntimeException());
+                return;
+            }
+            // The version names exactly the source sent, not the row's: an upload stores its source before it commits
+            // its version, and qduoj keeps each sandbox's compiled checker by version.
+            spec.setSpjSource(checker.get())
+                    .setSpjVersion(CheckerService.versionOf(checker.get().getBytes(StandardCharsets.UTF_8)));
+        }
         responseObserver.onNext(spec.build());
         responseObserver.onCompleted();
     }

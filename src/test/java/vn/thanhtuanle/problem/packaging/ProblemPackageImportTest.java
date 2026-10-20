@@ -67,6 +67,21 @@ class ProblemPackageImportTest extends PackagingPostgresTest {
         return jdbc.queryForObject("SELECT status FROM t_problems WHERE problem_slug = ?", String.class, slug);
     }
 
+    /** A package's {@code spj.cpp} follows an upload's rules (at most 64 KiB, UTF-8): a bad one creates nothing. */
+    @Test
+    void aCheckerThatIsNotUtf8Is400() throws Exception {
+        String slug = newSlug("imp");
+        Map<String, byte[]> entries = entries(problemJson(slug));
+        entries.put("spj.cpp", "// café\nint main() { return 0; }\n"
+                .getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+
+        importZip(zip(entries))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("A checker must be UTF-8 text"));
+        assertThat(problemCount(slug)).isZero();
+        assertThat(sources.files).isEmpty();
+    }
+
     @Test
     void duplicateSlugIs409() throws Exception {
         String slug = newSlug("imp");

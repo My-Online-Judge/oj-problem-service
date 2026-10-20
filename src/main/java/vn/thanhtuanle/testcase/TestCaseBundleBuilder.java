@@ -33,17 +33,33 @@ final class TestCaseBundleBuilder {
     private TestCaseBundleBuilder() {
     }
 
+    /** The bundle of a problem without a checker. */
     static List<BundleFile> build(List<SourcePair> pairs) {
+        return build(pairs, null);
+    }
+
+    /**
+     * The bundle; {@code spjVersion} is the version of the problem's checker, or null when it has none. With a checker,
+     * {@code info} says {@code "spj": true} and carries the version, so that adding, changing or removing a checker
+     * always gives a new bundle: bundles installed before SP13 stay 0700 on the workers, where qduoj's spj user cannot
+     * read them, while every new one is extracted readable (Task 16). Without one, the bytes are what they always were.
+     */
+    static List<BundleFile> build(List<SourcePair> pairs, String spjVersion) {
         List<BundleFile> files = new ArrayList<>();
         for (SourcePair pair : pairs) {
             files.add(new BundleFile(pair.inputName(), pair.input()));
             files.add(new BundleFile(pair.outputName(), pair.output()));
         }
-        files.add(new BundleFile("info", info(pairs)));
+        files.add(new BundleFile("info", info(pairs, spjVersion)));
         return files;
     }
 
     static byte[] info(List<SourcePair> pairs) {
+        return info(pairs, null);
+    }
+
+    /** judge-server reads {@code spj} and {@code test_cases}; {@code spj_version} is there for the hash only. */
+    static byte[] info(List<SourcePair> pairs, String spjVersion) {
         Map<String, Map<String, Object>> testCases = new TreeMap<>(); // keyed by name, in string order
         for (SourcePair pair : pairs) {
             Map<String, Object> tc = new LinkedHashMap<>();
@@ -57,7 +73,10 @@ final class TestCaseBundleBuilder {
         }
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("test_case_number", testCases.size());
-        info.put("spj", false);
+        info.put("spj", spjVersion != null);
+        if (spjVersion != null) {
+            info.put("spj_version", spjVersion);
+        }
         info.put("test_cases", testCases);
         try {
             return JSON.writerWithDefaultPrettyPrinter().writeValueAsString(info).getBytes(StandardCharsets.UTF_8);

@@ -40,6 +40,8 @@ public interface ProblemStatisticProjection {
 
     int getStatus();
 
+    boolean getSpj();
+
     int getTotalSubmission();
 
     int getAcceptedSubmission();
