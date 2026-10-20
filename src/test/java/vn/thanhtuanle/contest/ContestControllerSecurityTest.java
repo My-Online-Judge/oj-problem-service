@@ -210,6 +210,20 @@ class ContestControllerSecurityTest {
                 .andExpect(jsonPath("$.data.myProgress").isEmpty());
     }
 
+    /** Identity always sets uid; a token without it is read as anonymous, not as a 500. */
+    @Test
+    void aTokenWithoutUidReadsAsAnonymous() throws Exception {
+        Jwt jwt = Jwt.withTokenValue("no-uid").header("alg", "RS256").subject("alice")
+                .claim(OjJwtAuthenticationFilter.AUTHORITIES_CLAIM, List.of()).build();
+        when(jwtDecoder.decode("no-uid")).thenReturn(jwt);
+        when(contests.detail("spring-cup", false, false, Optional.empty())).thenReturn(detail("spring-cup"));
+
+        mockMvc.perform(get(CONTESTS + "/spring-cup").header(HttpHeaders.AUTHORIZATION, "Bearer no-uid"))
+                .andExpect(status().isOk());
+
+        verify(contests).detail("spring-cup", false, false, Optional.empty());
+    }
+
     @Test
     void aSignedInViewerIsTheTokensUidAndAnEditorWithContestUpdate() throws Exception {
         UUID uid = UUID.randomUUID();

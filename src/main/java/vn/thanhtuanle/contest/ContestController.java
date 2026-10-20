@@ -103,12 +103,12 @@ public class ContestController {
 
     /**
      * The signed-in caller, from the access token only. A request without a usable token (none, or expired: the JWT
-     * filter is lenient) is anonymous here, where {@code CurrentUser.id()} would throw.
+     * filter is lenient), or a token without a uid, is anonymous here, where {@code CurrentUser.id()} would throw.
      */
     private static Optional<UUID> viewer() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth instanceof JwtAuthenticationToken token) {
-            return Optional.of(UUID.fromString(token.getToken().getClaimAsString(OjJwtDecoders.UID_CLAIM)));
+            return Optional.ofNullable(token.getToken().getClaimAsString(OjJwtDecoders.UID_CLAIM)).map(UUID::fromString);
         }
         return Optional.empty();
     }
