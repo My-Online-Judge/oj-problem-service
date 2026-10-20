@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.common.exception.ErrorCode;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
@@ -39,8 +40,10 @@ import java.util.stream.Stream;
 
 /**
  * Contests: the public list and detail, admin changes, and problems read through a contest. An "editor" is a caller
- * with {@code contest:update}; DRAFT contests exist for editors only. Every DTO is built inside the transaction
- * (open-in-view is off).
+ * with {@code contest:update}; DRAFT contests exist for editors only. A "problem editor" holds {@code problem:update}:
+ * only a caller who is both sees a contest's problems early (a DRAFT, or before the start), and only a problem editor
+ * attaches a problem that is not ACTIVE, because SP12 keeps INACTIVE problems for problem editors. Every DTO is built
+ * inside the transaction (open-in-view is off).
  */
 @Service
 @RequiredArgsConstructor
@@ -80,18 +83,21 @@ public class ContestService {
         return new ContestListResponse(running, upcoming, past.stream().map(c -> summary(c, now, counts)).toList(), now);
     }
 
-    /** DRAFT is a 404 for non-editors; problems stay hidden before the start unless the caller is an editor. */
+    /**
+     * DRAFT is a 404 for non-editors. The problems stay hidden while the contest is a DRAFT or has not started,
+     * unless the caller is both an editor and a problem editor.
+     */
     @Transactional(readOnly = true)
-    public ContestDetail detail(String slug, boolean editor, Optional<UUID> viewer) {
+    public ContestDetail detail(String slug, boolean editor, boolean problemEditor, Optional<UUID> viewer) {
         Contest contest = visible(slug, editor);
-        return toDetail(contest, editor, viewer);
+        return toDetail(contest, editor && problemEditor, viewer);
     }
 
     @Transactional
-    public ContestDetail create(ContestRequest r) {
+    public ContestDetail create(ContestRequest r, boolean problemEditor) {
         log.info("Start create contest: {}", r.slug());
         requireWindow(r);
-        List<Problem> chosen = resolveProblems(r.problemSlugs());
+        List<Problem> chosen = resolveProblems(r.problemSlugs(), problemEditor);
         if (contests.existsBySlug(r.slug())) {
             throw slugTaken(r.slug());
         }
@@ -105,7 +111,7 @@ public class ContestService {
                 .build();
         setProblems(contest, chosen);
         claimSlug(contest);
-        return toDetail(contest, true, Optional.empty());
+        return toDetail(contest, problemEditor, Optional.empty());
     }
 
     /**
@@ -113,7 +119,7 @@ public class ContestService {
      * end and status may still change.
      */
     @Transactional
-    public ContestDetail update(String slug, ContestRequest r) {
+    public ContestDetail update(String slug, ContestRequest r, boolean problemEditor) {
         log.info("Start update contest: {}", slug);
         Contest contest = find(slug);
         boolean problemsChange = !slugsOf(contest).equals(r.problemSlugs());
@@ -123,7 +129,7 @@ public class ContestService {
         }
         requireWindow(r);
         // An unchanged list is not checked again: a problem deleted since must not block the other changes.
-        List<Problem> chosen = problemsChange ? resolveProblems(r.problemSlugs()) : null;
+        List<Problem> chosen = problemsChange ? resolveProblems(r.problemSlugs(), problemEditor) : null;
 
         contest.setTitle(r.title());
         contest.setDescription(r.description());
@@ -135,7 +141,7 @@ public class ContestService {
             contests.flush(); // the old rows go first: (contest, label) and (contest, problem) are unique
             setProblems(contest, chosen);
         }
-        return toDetail(contest, true, Optional.empty());
+        return toDetail(contest, problemEditor, Optional.empty());
     }
 
     /** Refused (409) for a PUBLISHED contest that has started; otherwise its problems and scores go with it. */
@@ -151,7 +157,8 @@ public class ContestService {
 
     /**
      * A contest's problem by label, whatever the problem's status except DELETED: for everyone once a PUBLISHED
-     * contest is running or has ended, for editors at any time. Otherwise a 404.
+     * contest is running or has ended, at any time for an {@code editor}, which here means a caller who is both an
+     * editor and a problem editor. Otherwise a 404.
      */
     @Transactional(readOnly = true)
     public ProblemResponseDto problem(String slug, String label, boolean editor) {
@@ -229,8 +236,11 @@ public class ContestService {
         }
     }
 
-    /** The live problems behind these slugs, in order: 1 to 26 of them, each once. */
-    private List<Problem> resolveProblems(List<String> slugs) {
+    /**
+     * The live problems behind these slugs, in order: 1 to 26 of them, each once. A problem that is not ACTIVE counts
+     * as unknown unless the caller is a problem editor.
+     */
+    private List<Problem> resolveProblems(List<String> slugs, boolean problemEditor) {
         if (slugs == null || slugs.isEmpty() || slugs.size() > MAX_PROBLEMS) {
             throw new IllegalArgumentException("A contest has 1 to " + MAX_PROBLEMS + " problems");
         }
@@ -243,6 +253,7 @@ public class ContestService {
         List<Problem> chosen = new ArrayList<>();
         for (String slug : slugs) {
             chosen.add(problems.findLiveBySlug(slug)
+                    .filter(p -> problemEditor || p.getStatus() == ProblemStatus.ACTIVE.getValue())
                     .orElseThrow(() -> new IllegalArgumentException("Unknown problem: " + slug)));
         }
         return chosen;
@@ -277,10 +288,12 @@ public class ContestService {
                 phase(c, now), counts.getOrDefault(c.getId(), 0));
     }
 
-    private ContestDetail toDetail(Contest contest, boolean editor, Optional<UUID> viewer) {
+    /** {@code early}: the caller may see the problems of a DRAFT, or before the start. */
+    private ContestDetail toDetail(Contest contest, boolean early, Optional<UUID> viewer) {
         Instant now = clock.instant();
         ContestPhase phase = phase(contest, now);
-        List<ContestProblem> shown = editor || phase != ContestPhase.UPCOMING ? ordered(contest) : List.of();
+        boolean open = contest.getStatus() == ContestStatus.PUBLISHED && phase != ContestPhase.UPCOMING;
+        List<ContestProblem> shown = early || open ? ordered(contest) : List.of();
         List<ContestProblemView> views = shown.stream()
                 .map(cp -> new ContestProblemView(String.valueOf(cp.getLabel()), cp.getProblem().getProblemSlug(),
                         cp.getProblem().getTitle()))

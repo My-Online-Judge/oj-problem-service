@@ -156,7 +156,7 @@ class ContestServiceTest extends PostgresTest {
         String p1 = problem(), p2 = problem(), p3 = problem();
         String slug = slug("labels");
 
-        ContestDetail created = contests.create(published(slug, p1, p2, p3));
+        ContestDetail created = contests.create(published(slug, p1, p2, p3), true);
 
         assertThat(created.problems()).extracting(ContestProblemView::label, ContestProblemView::problemSlug)
                 .containsExactly(tuple("A", p1), tuple("B", p2), tuple("C", p3));
@@ -174,9 +174,9 @@ class ContestServiceTest extends PostgresTest {
         String live = problem();
         String deleted = problem(ProblemStatus.DELETED);
 
-        assertThatThrownBy(() -> contests.create(published(slug("unknown"), live, "no-such-problem")))
+        assertThatThrownBy(() -> contests.create(published(slug("unknown"), live, "no-such-problem"), true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("Unknown problem: no-such-problem");
-        assertThatThrownBy(() -> contests.create(published(slug("deleted"), live, deleted)))
+        assertThatThrownBy(() -> contests.create(published(slug("deleted"), live, deleted), true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("Unknown problem: " + deleted);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM t_contests", Integer.class)).isZero();
     }
@@ -185,7 +185,7 @@ class ContestServiceTest extends PostgresTest {
     void createRejectsDuplicateProblems() {
         String p1 = problem(), p2 = problem();
 
-        assertThatThrownBy(() -> contests.create(published(slug("dup"), p1, p2, p1)))
+        assertThatThrownBy(() -> contests.create(published(slug("dup"), p1, p2, p1), true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("Duplicate problem: " + p1);
     }
 
@@ -193,10 +193,10 @@ class ContestServiceTest extends PostgresTest {
     void createRejectsMoreThan26Problems() {
         List<String> many = IntStream.range(0, 27).mapToObj(i -> problem()).toList();
 
-        assertThatThrownBy(() -> contests.create(published(slug("many"), many.toArray(String[]::new))))
+        assertThatThrownBy(() -> contests.create(published(slug("many"), many.toArray(String[]::new)), true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("A contest has 1 to 26 problems");
 
-        ContestDetail full = contests.create(published(slug("full"), many.subList(0, 26).toArray(String[]::new)));
+        ContestDetail full = contests.create(published(slug("full"), many.subList(0, 26).toArray(String[]::new)), true);
         assertThat(full.problems()).hasSize(26).last().extracting(ContestProblemView::label).isEqualTo("Z");
         persisted(); // the label check constraint accepts Z
     }
@@ -205,9 +205,9 @@ class ContestServiceTest extends PostgresTest {
     void createRejectsEndNotAfterStart() {
         String p = problem();
 
-        assertThatThrownBy(() -> contests.create(request(slug("zero"), T, T, ContestStatus.PUBLISHED, List.of(p))))
+        assertThatThrownBy(() -> contests.create(request(slug("zero"), T, T, ContestStatus.PUBLISHED, List.of(p)), true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("A contest must end after it starts");
-        assertThatThrownBy(() -> contests.create(request(slug("back"), T, T.minusSeconds(1), ContestStatus.DRAFT, List.of(p))))
+        assertThatThrownBy(() -> contests.create(request(slug("back"), T, T.minusSeconds(1), ContestStatus.DRAFT, List.of(p)), true))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("A contest must end after it starts");
     }
 
@@ -215,10 +215,10 @@ class ContestServiceTest extends PostgresTest {
     void createRejectsATakenSlug() {
         String p = problem();
         String slug = slug("taken");
-        contests.create(published(slug, p));
+        contests.create(published(slug, p), true);
         persisted();
 
-        assertThatThrownBy(() -> contests.create(published(slug, p)))
+        assertThatThrownBy(() -> contests.create(published(slug, p), true))
                 .isInstanceOf(ResourceAlreadyExistException.class).hasMessage("Contest slug already exists: " + slug);
     }
 
@@ -237,14 +237,14 @@ class ContestServiceTest extends PostgresTest {
         String pastOld = slug("past-old");
         String pastNew = slug("past-new");
         String endedNow = slug("ended-now");
-        contests.create(request(runningLate, T.minus(hour), T.plus(hour.multipliedBy(3)), ContestStatus.PUBLISHED, List.of(p1)));
-        contests.create(request(runningSoon, T, T.plus(hour), ContestStatus.PUBLISHED, List.of(p1, p2)));
-        contests.create(request(runningDraft, T.minus(hour), T.plus(hour.multipliedBy(2)), ContestStatus.DRAFT, List.of(p1)));
-        contests.create(request(upcomingLate, T.plus(hour.multipliedBy(48)), T.plus(hour.multipliedBy(50)), ContestStatus.PUBLISHED, List.of(p1)));
-        contests.create(request(upcomingSoon, T.plus(hour.multipliedBy(24)), T.plus(hour.multipliedBy(26)), ContestStatus.PUBLISHED, List.of(p1)));
-        contests.create(request(pastOld, T.minus(hour.multipliedBy(50)), T.minus(hour.multipliedBy(48)), ContestStatus.PUBLISHED, List.of(p1)));
-        contests.create(request(pastNew, T.minus(hour.multipliedBy(26)), T.minus(hour.multipliedBy(24)), ContestStatus.PUBLISHED, List.of(p1)));
-        contests.create(request(endedNow, T.minus(hour), T, ContestStatus.PUBLISHED, List.of(p1)));
+        contests.create(request(runningLate, T.minus(hour), T.plus(hour.multipliedBy(3)), ContestStatus.PUBLISHED, List.of(p1)), true);
+        contests.create(request(runningSoon, T, T.plus(hour), ContestStatus.PUBLISHED, List.of(p1, p2)), true);
+        contests.create(request(runningDraft, T.minus(hour), T.plus(hour.multipliedBy(2)), ContestStatus.DRAFT, List.of(p1)), true);
+        contests.create(request(upcomingLate, T.plus(hour.multipliedBy(48)), T.plus(hour.multipliedBy(50)), ContestStatus.PUBLISHED, List.of(p1)), true);
+        contests.create(request(upcomingSoon, T.plus(hour.multipliedBy(24)), T.plus(hour.multipliedBy(26)), ContestStatus.PUBLISHED, List.of(p1)), true);
+        contests.create(request(pastOld, T.minus(hour.multipliedBy(50)), T.minus(hour.multipliedBy(48)), ContestStatus.PUBLISHED, List.of(p1)), true);
+        contests.create(request(pastNew, T.minus(hour.multipliedBy(26)), T.minus(hour.multipliedBy(24)), ContestStatus.PUBLISHED, List.of(p1)), true);
+        contests.create(request(endedNow, T.minus(hour), T, ContestStatus.PUBLISHED, List.of(p1)), true);
         persisted();
 
         ContestListResponse anyone = contests.list(false);
@@ -276,7 +276,7 @@ class ContestServiceTest extends PostgresTest {
         for (int i = 0; i <= 50; i++) {
             String slug = slug("past-" + i);
             Instant start = T.minus(Duration.ofDays(10)).plus(Duration.ofHours(i));
-            contests.create(request(slug, start, start.plus(Duration.ofMinutes(30)), ContestStatus.PUBLISHED, List.of(p)));
+            contests.create(request(slug, start, start.plus(Duration.ofMinutes(30)), ContestStatus.PUBLISHED, List.of(p)), true);
             ended.add(slug);
         }
         persisted();
@@ -295,12 +295,12 @@ class ContestServiceTest extends PostgresTest {
     void detailHidesProblemsBeforeStart() {
         String p1 = problem(), p2 = problem();
         String slug = slug("hidden");
-        contests.create(published(slug, p1, p2));
+        contests.create(published(slug, p1, p2), true);
         persisted();
         clock.set(T.minusNanos(1000));
 
-        ContestDetail anyone = contests.detail(slug, false, Optional.empty());
-        ContestDetail editor = contests.detail(slug, true, Optional.empty());
+        ContestDetail anyone = contests.detail(slug, false, false, Optional.empty());
+        ContestDetail editor = contests.detail(slug, true, true, Optional.empty());
 
         assertThat(anyone.phase()).isEqualTo(ContestPhase.UPCOMING);
         assertThat(anyone.problems()).isEmpty();
@@ -309,20 +309,65 @@ class ContestServiceTest extends PostgresTest {
                 .containsExactly(tuple("A", p1, "Title of " + p1), tuple("B", p2, "Title of " + p2));
 
         clock.set(T);
-        assertThat(contests.detail(slug, false, Optional.empty()).problems()).hasSize(2);
+        assertThat(contests.detail(slug, false, false, Optional.empty()).problems()).hasSize(2);
+    }
+
+    /** SP12: INACTIVE problems are for problem editors. Seeing a contest's problems early takes problem:update too. */
+    @Test
+    void aContestEditorWithoutProblemUpdateSeesProblemsOnlyOnceStarted() {
+        String p = problem(ProblemStatus.INACTIVE);
+        String slug = slug("early");
+        String draft = slug("early-draft");
+        contests.create(published(slug, p), true);
+        contests.create(withStatus(published(draft, p), ContestStatus.DRAFT), true);
+        persisted();
+        clock.set(T.minusSeconds(1));
+
+        assertThat(contests.detail(slug, true, false, Optional.empty()).problems()).isEmpty();
+        assertThat(contests.detail(slug, true, true, Optional.empty()).problems()).hasSize(1);
+        assertThat(contests.update(slug, withStatus(published(null, p), ContestStatus.PUBLISHED), false).problems())
+                .isEmpty();
+
+        clock.set(T);
+        ContestDetail draftForContestEditor = contests.detail(draft, true, false, Optional.empty());
+        assertThat(draftForContestEditor.status()).isEqualTo(ContestStatus.DRAFT);
+        assertThat(draftForContestEditor.problems()).isEmpty();
+        assertThat(contests.detail(draft, true, true, Optional.empty()).problems()).hasSize(1);
+        assertThat(contests.detail(slug, true, false, Optional.empty()).problems()).hasSize(1); // started: public rule
+    }
+
+    /** Attaching an INACTIVE problem publishes it at the start, so it needs problem:update. */
+    @Test
+    void attachingAnInactiveProblemNeedsProblemUpdate() {
+        String active = problem();
+        String inactive = problem(ProblemStatus.INACTIVE);
+
+        assertThatThrownBy(() -> contests.create(published(slug("no-right"), active, inactive), false))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("Unknown problem: " + inactive);
+        assertThat(contests.create(published(slug("active-only"), active), false).problems()).isEmpty();
+
+        String slug = slug("with-right");
+        ContestRequest original = published(slug, active, inactive);
+        contests.create(original, true);
+        persisted();
+        assertThatThrownBy(() -> contests.update(slug, withProblems(original, inactive, active), false))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("Unknown problem: " + inactive);
+        // an unchanged list is not checked again
+        assertThat(contests.update(slug, withStatus(original, ContestStatus.DRAFT), false).status())
+                .isEqualTo(ContestStatus.DRAFT);
     }
 
     @Test
     void draftDetailIs404ForNonEditors() {
         String slug = slug("draft");
-        contests.create(withStatus(published(slug, problem()), ContestStatus.DRAFT));
+        contests.create(withStatus(published(slug, problem()), ContestStatus.DRAFT), true);
         persisted();
         clock.set(T.plus(Duration.ofMinutes(5)));
 
-        assertThatThrownBy(() -> contests.detail(slug, false, Optional.empty()))
+        assertThatThrownBy(() -> contests.detail(slug, false, false, Optional.empty()))
                 .isInstanceOf(ResourceNotFoundException.class);
-        assertThat(contests.detail(slug, true, Optional.empty()).status()).isEqualTo(ContestStatus.DRAFT);
-        assertThatThrownBy(() -> contests.detail(slug("no-such"), true, Optional.empty()))
+        assertThat(contests.detail(slug, true, true, Optional.empty()).status()).isEqualTo(ContestStatus.DRAFT);
+        assertThatThrownBy(() -> contests.detail(slug("no-such"), true, true, Optional.empty()))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -330,7 +375,7 @@ class ContestServiceTest extends PostgresTest {
     void detailCarriesMyProgress() {
         String p1 = problem(), p2 = problem(), p3 = problem();
         String slug = slug("progress");
-        contests.create(published(slug, p1, p2, p3));
+        contests.create(published(slug, p1, p2, p3), true);
         UUID contestId = contestId(slug);
         UUID me = UUID.randomUUID();
         UUID someoneElse = UUID.randomUUID();
@@ -340,23 +385,23 @@ class ContestServiceTest extends PostgresTest {
         persisted();
         clock.set(T.plus(Duration.ofMinutes(30)));
 
-        ContestDetail mine = contests.detail(slug, false, Optional.of(me));
+        ContestDetail mine = contests.detail(slug, false, false, Optional.of(me));
 
         assertThat(mine.myProgress()).isEqualTo(Map.of(
                 "A", new ProblemProgress(true, 2),
                 "B", new ProblemProgress(false, 2)));
-        assertThat(contests.detail(slug, false, Optional.empty()).myProgress()).isEmpty();
+        assertThat(contests.detail(slug, false, false, Optional.empty()).myProgress()).isEmpty();
     }
 
     @Test
     void detailCarriesServerTime() {
         String slug = slug("server-time");
-        contests.create(published(slug, problem()));
+        contests.create(published(slug, problem()), true);
         persisted();
         Instant now = Instant.parse("2026-10-21T01:23:45.678Z");
         clock.set(now);
 
-        assertThat(contests.detail(slug, false, Optional.empty()).serverTime()).isEqualTo(now);
+        assertThat(contests.detail(slug, false, false, Optional.empty()).serverTime()).isEqualTo(now);
     }
 
     // --- problems read through a contest ---
@@ -365,7 +410,7 @@ class ContestServiceTest extends PostgresTest {
     void problemReadableWhileRunningEvenIfInactive() {
         String inactive = problem(ProblemStatus.INACTIVE);
         String slug = slug("running");
-        contests.create(published(slug, inactive));
+        contests.create(published(slug, inactive), true);
         persisted();
         clock.set(T);
 
@@ -380,8 +425,8 @@ class ContestServiceTest extends PostgresTest {
         String p = problem();
         String slug = slug("before");
         String draft = slug("draft-running");
-        contests.create(published(slug, p));
-        contests.create(withStatus(published(draft, p), ContestStatus.DRAFT));
+        contests.create(published(slug, p), true);
+        contests.create(withStatus(published(draft, p), ContestStatus.DRAFT), true);
         persisted();
         clock.set(T.minusNanos(1000));
 
@@ -396,7 +441,7 @@ class ContestServiceTest extends PostgresTest {
     void problemReadableAfterEnd() {
         String p = problem();
         String slug = slug("after");
-        contests.create(published(slug, p));
+        contests.create(published(slug, p), true);
         persisted();
         clock.set(T.plus(LENGTH));
 
@@ -409,7 +454,7 @@ class ContestServiceTest extends PostgresTest {
     void aDeletedProblemIsNotReadableThroughAContest() {
         String p = problem();
         String slug = slug("deleted-later");
-        contests.create(published(slug, p));
+        contests.create(published(slug, p), true);
         persisted();
         jdbc.update("UPDATE t_problems SET status = ? WHERE problem_slug = ?", ProblemStatus.DELETED.getValue(), p);
         clock.set(T);
@@ -424,38 +469,38 @@ class ContestServiceTest extends PostgresTest {
         String p1 = problem(), p2 = problem();
         String slug = slug("started");
         ContestRequest original = published(slug, p1);
-        contests.create(original);
+        contests.create(original, true);
         persisted();
         clock.set(T);
 
         ContestRequest allowed = new ContestRequest(null, "New title", "New description", T, T.plus(Duration.ofHours(4)),
                 ContestStatus.PUBLISHED, List.of(p1));
-        ContestDetail updated = contests.update(slug, allowed);
+        ContestDetail updated = contests.update(slug, allowed, true);
 
         assertThat(updated.title()).isEqualTo("New title");
         persisted();
-        ContestDetail read = contests.detail(slug, false, Optional.empty());
+        ContestDetail read = contests.detail(slug, false, false, Optional.empty());
         assertThat(read.title()).isEqualTo("New title");
         assertThat(read.description()).isEqualTo("New description");
         assertThat(read.endsAt()).isEqualTo(T.plus(Duration.ofHours(4)));
 
-        assertThatThrownBy(() -> contests.update(slug, withStart(allowed, T.plus(Duration.ofMinutes(1)))))
+        assertThatThrownBy(() -> contests.update(slug, withStart(allowed, T.plus(Duration.ofMinutes(1))), true))
                 .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
                 .isEqualTo(ErrorCode.CONTEST_STARTED);
-        assertThatThrownBy(() -> contests.update(slug, withProblems(allowed, p1, p2)))
+        assertThatThrownBy(() -> contests.update(slug, withProblems(allowed, p1, p2), true))
                 .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
                 .isEqualTo(ErrorCode.CONTEST_STARTED);
-        assertThatThrownBy(() -> contests.update(slug, withProblems(allowed, p2)))
+        assertThatThrownBy(() -> contests.update(slug, withProblems(allowed, p2), true))
                 .isInstanceOf(AppException.class).extracting(ContestServiceTest::errorCodeOf)
                 .isEqualTo(ErrorCode.CONTEST_STARTED);
         persisted();
-        assertThat(contests.detail(slug, false, Optional.empty()).problems())
+        assertThat(contests.detail(slug, false, false, Optional.empty()).problems())
                 .extracting(ContestProblemView::problemSlug).containsExactly(p1);
 
         // The status may still change, and a DRAFT is no longer locked.
-        assertThat(contests.update(slug, withStatus(allowed, ContestStatus.DRAFT)).status()).isEqualTo(ContestStatus.DRAFT);
+        assertThat(contests.update(slug, withStatus(allowed, ContestStatus.DRAFT), true).status()).isEqualTo(ContestStatus.DRAFT);
         persisted();
-        assertThat(contests.update(slug, withProblems(withStatus(allowed, ContestStatus.DRAFT), p2)).problems())
+        assertThat(contests.update(slug, withProblems(withStatus(allowed, ContestStatus.DRAFT), p2), true).problems())
                 .extracting(ContestProblemView::problemSlug).containsExactly(p2);
     }
 
@@ -463,13 +508,13 @@ class ContestServiceTest extends PostgresTest {
     void updateBeforeStartRewritesProblemsAndStart() {
         String p1 = problem(), p2 = problem(), p3 = problem();
         String slug = slug("reorder");
-        contests.create(published(slug, p1, p2));
+        contests.create(published(slug, p1, p2), true);
         persisted();
 
-        contests.update(slug, withStart(withProblems(published(null, p1), p2, p1, p3), T.plus(Duration.ofMinutes(30))));
+        contests.update(slug, withStart(withProblems(published(null, p1), p2, p1, p3), T.plus(Duration.ofMinutes(30))), true);
         persisted();
 
-        ContestDetail read = contests.detail(slug, true, Optional.empty());
+        ContestDetail read = contests.detail(slug, true, true, Optional.empty());
         assertThat(read.problems()).extracting(ContestProblemView::label, ContestProblemView::problemSlug)
                 .containsExactly(tuple("A", p2), tuple("B", p1), tuple("C", p3));
         assertThat(read.startsAt()).isEqualTo(T.plus(Duration.ofMinutes(30)));
@@ -481,18 +526,18 @@ class ContestServiceTest extends PostgresTest {
         String p = problem();
         String slug = slug("deleted-since");
         ContestRequest original = published(slug, p);
-        contests.create(original);
+        contests.create(original, true);
         persisted();
         jdbc.update("UPDATE t_problems SET status = ? WHERE problem_slug = ?", ProblemStatus.DELETED.getValue(), p);
         clock.set(T.plus(Duration.ofHours(1)));
 
-        assertThat(contests.update(slug, withStatus(original, ContestStatus.DRAFT)).status()).isEqualTo(ContestStatus.DRAFT);
+        assertThat(contests.update(slug, withStatus(original, ContestStatus.DRAFT), true).status()).isEqualTo(ContestStatus.DRAFT);
     }
 
     @Test
     void deleteRefusedOnceStarted() {
         String slug = slug("no-delete");
-        contests.create(published(slug, problem()));
+        contests.create(published(slug, problem()), true);
         persisted();
         clock.set(T);
 
@@ -507,7 +552,7 @@ class ContestServiceTest extends PostgresTest {
     void deleteBeforeStartRemovesProblems() {
         String p1 = problem(), p2 = problem();
         String slug = slug("delete");
-        contests.create(published(slug, p1, p2));
+        contests.create(published(slug, p1, p2), true);
         UUID id = contestId(slug);
         persisted();
         clock.set(T.minusNanos(1000));
@@ -526,14 +571,14 @@ class ContestServiceTest extends PostgresTest {
         String p = problem();
         String slug = slug("draft-delete");
         ContestRequest original = published(slug, p);
-        contests.create(original);
+        contests.create(original, true);
         UUID id = contestId(slug);
         score(id, UUID.randomUUID(), p, 1, T.plus(Duration.ofMinutes(3)));
         persisted();
         assertThat(rowsOf(id)).containsExactly(1, 1, 1);
         clock.set(T.plus(Duration.ofHours(1)));
 
-        contests.update(slug, withStatus(original, ContestStatus.DRAFT));
+        contests.update(slug, withStatus(original, ContestStatus.DRAFT), true);
         persisted();
         contests.delete(slug);
         persisted();

@@ -67,7 +67,7 @@ class ContestSlugRaceTest extends PostgresTest {
 
         long started = System.nanoTime();
         assertThatThrownBy(() -> contests.create(new ContestRequest(slug, "loser", null, start,
-                start.plus(Duration.ofHours(3)), ContestStatus.PUBLISHED, List.of(problem))))
+                start.plus(Duration.ofHours(3)), ContestStatus.PUBLISHED, List.of(problem)), true))
                 .isInstanceOf(ResourceAlreadyExistException.class)
                 .hasMessage("Contest slug already exists: " + slug);
         winner.join();

@@ -21,8 +21,10 @@ import vn.thanhtuanle.contest.dto.ContestRequest;
 import vn.thanhtuanle.oj.common.security.OjJwtAuthenticationFilter;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
+import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.oj.common.web.security.OjAccessDeniedHandler;
 import vn.thanhtuanle.oj.common.web.security.OjAuthenticationEntryPoint;
+import vn.thanhtuanle.problem.dto.ProblemResponseDto;
 
 import java.time.Instant;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -99,7 +102,7 @@ class ContestControllerSecurityTest {
     @Test
     @WithMockUser(authorities = "contest:create")
     void createWithContestCreateIs201() throws Exception {
-        when(contests.create(any())).thenReturn(detail("spring-cup"));
+        when(contests.create(any(), anyBoolean())).thenReturn(detail("spring-cup"));
 
         mockMvc.perform(post(CONTESTS).contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
                 .andExpect(status().isCreated())
@@ -119,7 +122,7 @@ class ContestControllerSecurityTest {
     @Test
     @WithMockUser(authorities = "contest:create")
     void aSlugClashIs409() throws Exception {
-        when(contests.create(any())).thenThrow(new ResourceAlreadyExistException("Contest slug already exists: spring-cup"));
+        when(contests.create(any(), anyBoolean())).thenThrow(new ResourceAlreadyExistException("Contest slug already exists: spring-cup"));
 
         mockMvc.perform(post(CONTESTS).contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
                 .andExpect(status().isConflict())
@@ -130,10 +133,60 @@ class ContestControllerSecurityTest {
     @Test
     @WithMockUser(authorities = "contest:update")
     void updateIgnoresTheSlug() throws Exception {
-        when(contests.update(eq("spring-cup"), any(ContestRequest.class))).thenReturn(detail("spring-cup"));
+        when(contests.update(eq("spring-cup"), any(ContestRequest.class), anyBoolean())).thenReturn(detail("spring-cup"));
 
         mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("Bad Slug")))
                 .andExpect(status().isOk());
+    }
+
+    /** contest:* alone reads a contest's problems by the public rule (DRAFT or before the start: 404). */
+    @Test
+    @WithMockUser(authorities = {"contest:create", "contest:update", "contest:delete"})
+    void aContestOnlyRoleReadsProblemsByThePublicRule() throws Exception {
+        when(contests.problem("spring-cup", "A", false))
+                .thenThrow(new ResourceNotFoundException("Contest not found: spring-cup"));
+        when(contests.detail("spring-cup", true, false, Optional.empty())).thenReturn(detail("spring-cup"));
+        when(contests.create(any(), eq(false))).thenReturn(detail("spring-cup"));
+        when(contests.update(eq("spring-cup"), any(ContestRequest.class), eq(false))).thenReturn(detail("spring-cup"));
+
+        mockMvc.perform(get(CONTESTS + "/spring-cup/problems/A")).andExpect(status().isNotFound());
+        mockMvc.perform(get(CONTESTS + "/spring-cup")).andExpect(status().isOk());
+        mockMvc.perform(post(CONTESTS).contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isOk());
+
+        verify(contests).problem("spring-cup", "A", false);
+        verify(contests).detail("spring-cup", true, false, Optional.empty());
+        verify(contests).create(any(), eq(false));
+        verify(contests).update(eq("spring-cup"), any(ContestRequest.class), eq(false));
+    }
+
+    @Test
+    @WithMockUser(authorities = {"contest:update", "problem:update"})
+    void aContestAndProblemEditorReadsEarly() throws Exception {
+        when(contests.problem("spring-cup", "A", true)).thenReturn(new ProblemResponseDto());
+        when(contests.detail("spring-cup", true, true, Optional.empty())).thenReturn(detail("spring-cup"));
+        when(contests.update(eq("spring-cup"), any(ContestRequest.class), eq(true))).thenReturn(detail("spring-cup"));
+
+        mockMvc.perform(get(CONTESTS + "/spring-cup/problems/A")).andExpect(status().isOk());
+        mockMvc.perform(get(CONTESTS + "/spring-cup")).andExpect(status().isOk());
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isOk());
+
+        verify(contests).problem("spring-cup", "A", true);
+        verify(contests).detail("spring-cup", true, true, Optional.empty());
+        verify(contests).update(eq("spring-cup"), any(ContestRequest.class), eq(true));
+    }
+
+    @Test
+    @WithMockUser(authorities = "problem:update")
+    void aProblemEditorWithoutContestUpdateIsNoContestEditor() throws Exception {
+        when(contests.problem("spring-cup", "A", false)).thenReturn(new ProblemResponseDto());
+
+        mockMvc.perform(get(CONTESTS + "/spring-cup/problems/A")).andExpect(status().isOk());
+
+        verify(contests).problem("spring-cup", "A", false);
     }
 
     @Test
@@ -146,7 +199,7 @@ class ContestControllerSecurityTest {
     /** No token, or one the lenient filter could not use (expired): the anonymous view, never a 500 or a 401. */
     @Test
     void anonymousDetailHasNoProgress() throws Exception {
-        when(contests.detail("spring-cup", false, Optional.empty())).thenReturn(detail("spring-cup"));
+        when(contests.detail("spring-cup", false, false, Optional.empty())).thenReturn(detail("spring-cup"));
         when(jwtDecoder.decode("expired")).thenThrow(new BadJwtException("Jwt expired"));
 
         mockMvc.perform(get(CONTESTS + "/spring-cup"))
@@ -165,11 +218,11 @@ class ContestControllerSecurityTest {
                 .claim(OjJwtAuthenticationFilter.AUTHORITIES_CLAIM, List.of("contest:update"))
                 .build();
         when(jwtDecoder.decode("good")).thenReturn(jwt);
-        when(contests.detail("spring-cup", true, Optional.of(uid))).thenReturn(detail("spring-cup"));
+        when(contests.detail("spring-cup", true, false, Optional.of(uid))).thenReturn(detail("spring-cup"));
 
         mockMvc.perform(get(CONTESTS + "/spring-cup").header(HttpHeaders.AUTHORIZATION, "Bearer good"))
                 .andExpect(status().isOk());
 
-        verify(contests).detail("spring-cup", true, Optional.of(uid));
+        verify(contests).detail("spring-cup", true, false, Optional.of(uid));
     }
 }

@@ -100,7 +100,7 @@ class ProblemInternalGrpcContestTest {
     /** A contest from T to T + 3h holding these problems. */
     private String contest(ContestStatus status, String... problemSlugs) {
         String slug = "c-grpc-" + UUID.randomUUID().toString().substring(0, 8);
-        contestService.create(new ContestRequest(slug, "Contest " + slug, null, T, END, status, List.of(problemSlugs)));
+        contestService.create(new ContestRequest(slug, "Contest " + slug, null, T, END, status, List.of(problemSlugs)), true);
         return slug;
     }
 

@@ -29,6 +29,7 @@ import vn.thanhtuanle.contest.dto.ContestRequest;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
 import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
+import vn.thanhtuanle.problem.ProblemAccess;
 import vn.thanhtuanle.problem.dto.ProblemResponseDto;
 
 import java.util.Optional;
@@ -40,7 +41,7 @@ import java.util.UUID;
 @Slf4j
 public class ContestController {
 
-    /** Who sees DRAFT contests, and problems before the start. */
+    /** Who sees DRAFT contests; with problem:update too, also their problems, and problems before the start. */
     static final String EDITOR_AUTHORITY = "contest:update";
 
     private final ContestService contests;
@@ -54,7 +55,7 @@ public class ContestController {
     @GetMapping("/{slug}")
     @Operation(summary = "A contest, with the caller's progress when signed in")
     public ApiResponse<ContestDetail> detail(@PathVariable String slug) {
-        return ApiResponse.success(contests.detail(slug, editor(), viewer()));
+        return ApiResponse.success(contests.detail(slug, editor(), ProblemAccess.callerMayEdit(), viewer()));
     }
 
     @PostMapping
@@ -63,14 +64,14 @@ public class ContestController {
     @PreAuthorize("hasAuthority('contest:create')")
     public ApiResponse<ContestDetail> create(
             @Validated({Default.class, ContestRequest.OnCreate.class}) @RequestBody ContestRequest request) {
-        return ApiResponse.created(contests.create(request));
+        return ApiResponse.created(contests.create(request, ProblemAccess.callerMayEdit()));
     }
 
     @PutMapping("/{slug}")
     @Operation(summary = "Update a contest (admin only)")
     @PreAuthorize("hasAuthority('contest:update')")
     public ApiResponse<ContestDetail> update(@PathVariable String slug, @Valid @RequestBody ContestRequest request) {
-        return ApiResponse.success(contests.update(slug, request));
+        return ApiResponse.success(contests.update(slug, request, ProblemAccess.callerMayEdit()));
     }
 
     @DeleteMapping("/{slug}")
@@ -85,7 +86,7 @@ public class ContestController {
     @Operation(summary = "A contest's problem by label, once the contest has started")
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<ProblemResponseDto> problem(@PathVariable String slug, @PathVariable String label) {
-        return ApiResponse.success(contests.problem(slug, label, editor()));
+        return ApiResponse.success(contests.problem(slug, label, editor() && ProblemAccess.callerMayEdit()));
     }
 
     /** A taken slug is a conflict here; oj-common answers it with 400 everywhere else. */

@@ -8,8 +8,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One contest. {@code problems} is empty before the start for anyone but an editor; {@code myProgress} is the
- * caller's progress by label, for the problems the caller has tried, and empty for an anonymous caller.
+ * One contest. {@code problems} is empty for a DRAFT and before the start, except for a caller with both
+ * {@code contest:update} and {@code problem:update}; {@code myProgress} is the caller's progress by label, for the
+ * problems the caller has tried, and empty for an anonymous caller.
  */
 public record ContestDetail(String slug, String title, String description, Instant startsAt, Instant endsAt,
         ContestStatus status, ContestPhase phase, List<ContestProblemView> problems,
