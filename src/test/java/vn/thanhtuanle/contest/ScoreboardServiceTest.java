@@ -1,5 +1,7 @@
 package vn.thanhtuanle.contest;
 
+import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,7 +12,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.contest.dto.ContestRequest;
 import vn.thanhtuanle.contest.dto.ProblemCell;
@@ -25,9 +29,11 @@ import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.support.MutableClock;
 import vn.thanhtuanle.support.PostgresTest;
 
+import javax.sql.DataSource;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +68,7 @@ class ScoreboardServiceTest extends PostgresTest {
     @Autowired ProblemRepository problems;
     @Autowired JdbcTemplate jdbc;
     @Autowired MutableClock clock;
+    @Autowired DataSource dataSource;
     @PersistenceContext EntityManager em;
 
     @MockitoBean PublicUserClient users;
@@ -268,5 +275,38 @@ class ScoreboardServiceTest extends PostgresTest {
                         ScoreboardRow::penalty)
                 .containsExactly(tuple(tried, 1, 0, 0L));
         verify(users).byIds(Set.of(tried));
+    }
+
+    /**
+     * The usernames are asked for after the read-only transaction has ended, so a slow identity never holds a database
+     * connection (Task 13 review M6). Not in the class's rollback transaction, which the service's would join, so it
+     * commits its rows and deletes them afterwards.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void noTransactionOrConnectionIsHeldWhileIdentityIsAsked() throws Exception {
+        String p = problem();
+        String slug = "c-board-" + UUID.randomUUID().toString().substring(0, 8);
+        contests.create(request(slug, ContestStatus.PUBLISHED, List.of(p)), true);
+        try {
+            UUID alice = UUID.randomUUID();
+            score(slug, alice, p, 0, T.plus(Duration.ofMinutes(7)));
+            HikariPoolMXBean pool = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
+            List<Object> duringTheCall = new ArrayList<>();
+            when(users.byIds(anyCollection())).thenAnswer(call -> {
+                duringTheCall.add(TransactionSynchronizationManager.isActualTransactionActive());
+                duringTheCall.add(pool.getActiveConnections());
+                return Map.of(alice, profile(alice, "alice"));
+            });
+            clock.set(T.plus(Duration.ofHours(1)));
+
+            ScoreboardResponse board = scoreboards.scoreboard(slug, false);
+
+            assertThat(board.rows()).extracting(r -> r.user().username()).containsExactly("alice");
+            assertThat(duringTheCall).as("transaction open, active connections").containsExactly(false, 0);
+        } finally {
+            jdbc.update("DELETE FROM t_contests WHERE slug = ?", slug); // scores and problem links cascade
+            jdbc.update("DELETE FROM t_problems WHERE problem_slug = ?", p);
+        }
     }
 }
