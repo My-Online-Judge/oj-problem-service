@@ -26,4 +26,7 @@ RUN mkdir /otel \
 COPY --from=builder /app/target/problem-service.jar app.jar
 # 8000 = API (behind the gateway), 9090 = internal gRPC (oj-net only), 8081 = actuator (health, prometheus)
 EXPOSE 8000 9090 8081
+# Non-root (sp12): the app and /otel are root-owned and world-readable; it writes only /tmp.
+RUN addgroup -S -g 10001 oj && adduser -S -D -H -u 10001 -G oj oj
+USER 10001:10001
 ENTRYPOINT ["java", "-jar", "app.jar"]
