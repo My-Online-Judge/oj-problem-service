@@ -17,8 +17,11 @@ fetched over mutual TLS with the `oj` bundle). MinIO gets the service's own key 
 it is reached over https and its certificate is verified against the `oj` bundle's CA (`minio.ssl-bundle`).
 
 Internal API: `GetJudgeSpec` (NOT_FOUND for an unknown or deleted slug, FAILED_PRECONDITION when no
-bundle is published, UNAVAILABLE when MinIO cannot be read) and `GetSampleTestCases` (sample cases only;
-deleted problems included; unknown id → empty). Under the `tls` profile callers authenticate by client
+bundle is published, UNAVAILABLE when MinIO cannot be read; with a `contest_slug`, a spec with `contest_id` only
+while that PUBLISHED contest runs and contains the problem, INACTIVE included, else FAILED_PRECONDITION with the
+trailer `oj-reason: CONTEST_NOT_RUNNING`), `GetSampleTestCases` (sample cases only; deleted problems included;
+unknown id → empty) and `ListVisibleSlugs` (which of at most 100 slugs are ACTIVE; more → INVALID_ARGUMENT).
+Under the `tls` profile callers authenticate by client
 certificate: 9090 serves TLS, requires a CA-signed certificate and answers only the CNs in
 `oj.tls.grpc-allowed-clients` (submission-service; PERMISSION_DENIED otherwise). A set `oj.rpc.token`
 (`PROBLEM_RPC_TOKEN`, 32+ characters) additionally requires `x-oj-service-token` on every call. With neither,
