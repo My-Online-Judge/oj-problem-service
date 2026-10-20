@@ -176,4 +176,19 @@ class ScoreboardTest {
                 .containsExactly(tuple(onTime, 1, 5L), tuple(early, 2, 20L));
         assertThat(board.get(1).problems()).isEqualTo(Map.of("A", new ProblemCell(true, 2, 0L)));
     }
+
+    /** identity keeps usernames unique ignoring case but stores them as typed, so the tiebreak ignores case. */
+    @Test
+    void theUsernameTiebreakIgnoresCase() {
+        UUID zed = user(), alice = user();
+        Map<UUID, PublicUser> users = Map.of(
+                zed, new PublicUser(zed, "Zed", "Zed Z", null, null),
+                alice, new PublicUser(alice, "alice", "Alice A", null, null));
+
+        List<ScoreboardRow> board = Scoreboard.rank(START, LABELS, List.of(
+                row(zed, PA, 0, at("10:10:00")),
+                row(alice, PA, 0, at("10:10:00"))), users);
+
+        assertThat(board).extracting(r -> r.user().username()).containsExactly("alice", "Zed");
+    }
 }

@@ -29,10 +29,14 @@ public final class Scoreboard {
     private record Line(ScoreboardUser user, int solved, long penalty, SortedMap<String, ProblemCell> problems) {
     }
 
-    /** Solved desc, penalty asc, then username (unknown last), then user id: the rank needs only the first two. */
+    /**
+     * Solved desc, penalty asc, then username ignoring case (identity keeps usernames unique ignoring case but stores
+     * them as typed; unknown last), then user id: the rank needs only the first two.
+     */
     private static final Comparator<Line> ORDER = Comparator.comparingInt(Line::solved).reversed()
             .thenComparingLong(Line::penalty)
-            .thenComparing(l -> l.user().username(), Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(l -> l.user().username(),
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER.thenComparing(Comparator.naturalOrder())))
             .thenComparing(l -> l.user().id());
 
     private Scoreboard() {
