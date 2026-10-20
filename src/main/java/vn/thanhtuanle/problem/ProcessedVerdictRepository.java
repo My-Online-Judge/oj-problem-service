@@ -37,6 +37,12 @@ public interface ProcessedVerdictRepository extends JpaRepository<ProcessedVerdi
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<ProcessedVerdict> findForUpdateBySubmissionId(UUID submissionId);
 
+    /** The key {@link #attachContest} put on the submission's row, or empty for practice and unseen submissions. */
+    @Query(value = """
+            SELECT contest_id AS contestId, user_id AS userId, problem_id AS problemId
+            FROM t_processed_verdicts WHERE submission_id = :submissionId AND contest_id IS NOT NULL""", nativeQuery = true)
+    Optional<ContestKey> findContestKey(@Param("submissionId") UUID submissionId);
+
     /**
      * Puts the contest submission's contest, submitter, problem and submit time on its row (V7's columns, which the
      * entity does not map): its contest score is recomputed from these rows. Flushes the persistence context first,
@@ -44,12 +50,6 @@ public interface ProcessedVerdictRepository extends JpaRepository<ProcessedVerdi
      *
      * @return 1, or 0 when the submission has no row
      */
-    /** The key {@link #attachContest} put on the submission's row, or empty for practice and unseen submissions. */
-    @Query(value = """
-            SELECT contest_id AS contestId, user_id AS userId, problem_id AS problemId
-            FROM t_processed_verdicts WHERE submission_id = :submissionId AND contest_id IS NOT NULL""", nativeQuery = true)
-    Optional<ContestKey> findContestKey(@Param("submissionId") UUID submissionId);
-
     @Modifying(flushAutomatically = true)
     @Query(value = """
             UPDATE t_processed_verdicts
