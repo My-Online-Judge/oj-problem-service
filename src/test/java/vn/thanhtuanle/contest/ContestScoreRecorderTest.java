@@ -269,6 +269,23 @@ class ContestScoreRecorderTest extends PostgresTest {
         assertThat(scoreRowsOf(k.problemId())).isZero();
     }
 
+    /**
+     * A producer from before 0.8.0 (submission-service rolled back during a contest) sends verdicts without their
+     * contest fields. A rejudge of a submission attached earlier still moves its score: the row's own key is used.
+     */
+    @Test
+    void aRejudgeWithoutContestFieldsStillMovesAnAttachedScore() {
+        Key k = key();
+        UUID accepted = UUID.randomUUID();
+        recorder.record(k.verdict(UUID.randomUUID(), WA, 5));
+        recorder.record(k.verdict(accepted, AC, 10));
+        assertThat(row(k)).isEqualTo(score(k, 1, at(10)));
+
+        assertThat(recorder.record(new SubmissionVerdictRecorded(accepted, k.problemId(), WA, true))).isTrue();
+
+        assertThat(row(k)).isEqualTo(score(k, 2, null));
+    }
+
     @Test
     void verdictsTheStatisticsAlreadyHoldStillKeepTheScore() {
         Key k = key();

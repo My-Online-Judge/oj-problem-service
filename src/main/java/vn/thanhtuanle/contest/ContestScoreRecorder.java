@@ -8,12 +8,15 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.thanhtuanle.oj.common.event.SubmissionVerdictRecorded;
 import vn.thanhtuanle.problem.ProcessedVerdictRepository;
 
+import java.util.Optional;
+import java.util.UUID;
+
 /**
  * Keeps {@code t_contest_scores} from verdict events, inside the statistics' transaction
  * ({@code ProblemStatsRecorder}), which has already written the submission's {@code t_processed_verdicts} row with its
  * current verdict. A contest verdict puts its contest, submitter, problem and submit time on that row, and the
  * submitter's score on the problem is then recomputed from all such rows. So a duplicate changes nothing, the order of
- * delivery does not matter, and a rejudge is one more recompute.
+ * delivery does not matter, and a rejudge is one more recompute, even one sent without its contest fields.
  */
 @Service
 @RequiredArgsConstructor
@@ -25,7 +28,11 @@ public class ContestScoreRecorder {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void onVerdict(SubmissionVerdictRecorded e) {
-        if (e.contestId() == null || e.userId() == null || e.submittedAt() == null) {
+        if (e.contestId() == null) {
+            recomputeAttached(e.submissionId());
+            return;
+        }
+        if (e.userId() == null || e.submittedAt() == null) {
             log.debug("Verdict of submission {} keeps no contest score (contest {}, user {}, submitted at {})",
                     e.submissionId(), e.contestId(), e.userId(), e.submittedAt());
             return;
@@ -38,5 +45,25 @@ public class ContestScoreRecorder {
         }
         processedVerdicts.attachContest(e.submissionId(), e.contestId(), e.userId(), e.problemId(), e.submittedAt());
         scores.recompute(e.contestId(), e.userId(), e.problemId());
+    }
+
+    /**
+     * A verdict without contest fields: practice, or a producer from before 0.8.0 (submission-service rolled back)
+     * sending a verdict of a submission an earlier event attached here. A rejudge among those has just changed the
+     * row's verdict, so the score is recomputed from the row's own contest, submitter and problem.
+     */
+    private void recomputeAttached(UUID submissionId) {
+        Optional<ProcessedVerdictRepository.ContestKey> attached = processedVerdicts.findContestKey(submissionId);
+        if (attached.isEmpty()) {
+            log.debug("Verdict of submission {} keeps no contest score: not a contest submission", submissionId);
+            return;
+        }
+        ProcessedVerdictRepository.ContestKey key = attached.get();
+        if (!scores.lockContest(key.getContestId())) {
+            log.debug("Verdict of submission {} keeps no contest score: no contest {}", submissionId, key.getContestId());
+            return;
+        }
+        processedVerdicts.flush(); // a rejudge's new last_status, still pending, before the plain-SQL recompute reads it
+        scores.recompute(key.getContestId(), key.getUserId(), key.getProblemId());
     }
 }

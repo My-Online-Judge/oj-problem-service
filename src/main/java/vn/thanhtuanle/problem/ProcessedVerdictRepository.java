@@ -15,6 +15,15 @@ import java.util.UUID;
 
 public interface ProcessedVerdictRepository extends JpaRepository<ProcessedVerdict, UUID> {
 
+    /** The contest, submitter and problem a contest submission's row carries (V7's columns). */
+    interface ContestKey {
+        UUID getContestId();
+
+        UUID getUserId();
+
+        UUID getProblemId();
+    }
+
     /** @return 1 the first time this submission is seen (counted under {@code lastStatus}), 0 every time after */
     @Modifying
     @Query(value = """
@@ -35,6 +44,12 @@ public interface ProcessedVerdictRepository extends JpaRepository<ProcessedVerdi
      *
      * @return 1, or 0 when the submission has no row
      */
+    /** The key {@link #attachContest} put on the submission's row, or empty for practice and unseen submissions. */
+    @Query(value = """
+            SELECT contest_id AS contestId, user_id AS userId, problem_id AS problemId
+            FROM t_processed_verdicts WHERE submission_id = :submissionId AND contest_id IS NOT NULL""", nativeQuery = true)
+    Optional<ContestKey> findContestKey(@Param("submissionId") UUID submissionId);
+
     @Modifying(flushAutomatically = true)
     @Query(value = """
             UPDATE t_processed_verdicts
