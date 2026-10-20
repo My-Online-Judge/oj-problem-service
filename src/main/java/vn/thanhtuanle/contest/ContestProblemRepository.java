@@ -16,9 +16,14 @@ public interface ContestProblemRepository extends JpaRepository<ContestProblem, 
         long getProblems();
     }
 
-    /** How many problems each of these contests has; a contest without problems has no row. */
+    /**
+     * How many problems each of these contests has, leaving out problems deleted since they were attached (as the
+     * public detail does); a contest without such problems has no row.
+     */
     @Query("""
             SELECT cp.contest.id AS contestId, count(cp) AS problems
-            FROM ContestProblem cp WHERE cp.contest.id IN :ids GROUP BY cp.contest.id""")
+            FROM ContestProblem cp JOIN cp.problem p
+            WHERE cp.contest.id IN :ids AND p.status <> 2 /* ProblemStatus.DELETED */
+            GROUP BY cp.contest.id""")
     List<ProblemCount> countByContestIds(@Param("ids") Collection<UUID> ids);
 }

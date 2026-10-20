@@ -274,6 +274,22 @@ class ContestServiceTest extends PostgresTest {
         assertThat(editor.running().get(1).status()).isEqualTo(ContestStatus.DRAFT);
     }
 
+    /** Like the public detail, the list's count leaves out problems deleted since they were attached. */
+    @Test
+    void theListCountLeavesOutDeletedProblems() {
+        clock.set(T);
+        String p1 = problem(), p2 = problem(), p3 = problem();
+        String slug = slug("count");
+        contests.create(published(slug, p1, p2, p3), true);
+        persisted();
+        jdbc.update("UPDATE t_problems SET status = ? WHERE problem_slug = ?", ProblemStatus.DELETED.getValue(), p2);
+
+        assertThat(contests.list(false).running()).extracting(ContestSummary::slug, ContestSummary::problemCount)
+                .containsExactly(tuple(slug, 2));
+        assertThat(contests.list(true).running()).extracting(ContestSummary::problemCount).containsExactly(2);
+        assertThat(contests.detail(slug, false, false, Optional.empty()).problems()).hasSize(2);
+    }
+
     @Test
     void pastIsCappedAt50NewestFirst() {
         clock.set(T);
