@@ -14,12 +14,14 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import vn.thanhtuanle.common.exception.ErrorCode;
 import vn.thanhtuanle.config.SecurityConfig;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
 import vn.thanhtuanle.contest.dto.ContestRequest;
 import vn.thanhtuanle.oj.common.security.OjJwtAuthenticationFilter;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
+import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.oj.common.web.security.OjAccessDeniedHandler;
@@ -35,9 +37,11 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -187,6 +191,53 @@ class ContestControllerSecurityTest {
         mockMvc.perform(get(CONTESTS + "/spring-cup/problems/A")).andExpect(status().isOk());
 
         verify(contests).problem("spring-cup", "A", false);
+    }
+
+    @Test
+    void anonymousUpdateAndDeleteAre401() throws Exception {
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete(CONTESTS + "/spring-cup")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(contests);
+    }
+
+    @Test
+    @WithMockUser(authorities = {"contest:create", "contest:delete", "problem:update"})
+    void updateWithoutContestUpdateIs403() throws Exception {
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(contests);
+    }
+
+    @Test
+    @WithMockUser(authorities = {"contest:create", "contest:update", "problem:update"})
+    void deleteWithoutContestDeleteIs403() throws Exception {
+        mockMvc.perform(delete(CONTESTS + "/spring-cup")).andExpect(status().isForbidden());
+        verifyNoInteractions(contests);
+    }
+
+    @Test
+    @WithMockUser(authorities = "contest:delete")
+    void deleteWithContestDeleteIs200() throws Exception {
+        mockMvc.perform(delete(CONTESTS + "/spring-cup")).andExpect(status().isOk());
+        verify(contests).delete("spring-cup");
+    }
+
+    /** CONTEST_STARTED goes through oj-common's AppException handler, with the code's own status and text. */
+    @Test
+    @WithMockUser(authorities = {"contest:update", "contest:delete"})
+    void aStartedContestIs409() throws Exception {
+        when(contests.update(eq("spring-cup"), any(ContestRequest.class), anyBoolean()))
+                .thenThrow(new AppException(ErrorCode.CONTEST_STARTED));
+        doThrow(new AppException(ErrorCode.CONTEST_STARTED)).when(contests).delete("spring-cup");
+
+        mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value(ErrorCode.CONTEST_STARTED.getMessage()));
+        mockMvc.perform(delete(CONTESTS + "/spring-cup"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(ErrorCode.CONTEST_STARTED.getMessage()));
     }
 
     @Test
