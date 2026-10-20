@@ -296,7 +296,7 @@ public class ProblemService {
         log.info("Start update problem: {}", slug);
         rejectDeletedStatus(dto.getStatus());
         List<String> tags = ProblemTags.normalize(dto.getTags());
-        Problem problem = problemRepository.findLiveBySlug(slug)
+        Problem problem = problemRepository.findBySlugForUpdate(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Problem not found with slug: " + slug));
 
         problem.setTitle(dto.getTitle());
@@ -330,7 +330,7 @@ public class ProblemService {
     @Transactional
     public void deleteProblem(String slug) {
         log.info("Start delete problem: {}", slug);
-        Problem problem = problemRepository.findLiveBySlug(slug)
+        Problem problem = problemRepository.findBySlugForUpdate(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Problem not found with slug: " + slug));
 
         problem.setStatus(ProblemStatus.DELETED.getValue());

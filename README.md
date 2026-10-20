@@ -29,6 +29,20 @@ certificate: 9090 serves TLS, requires a CA-signed certificate and answers only 
 (`PROBLEM_RPC_TOKEN`, 32+ characters) additionally requires `x-oj-service-token` on every call. With neither,
 the service does not start.
 
+Checkers: `PUT/GET/DELETE /problems/{slug}/checker` (`problem:update`) store a C++ checker at
+`sources/<slug>/spj.cpp` and republish the bundle with `"spj": true`; the row's `spj` and `spj_version`
+(sha256 of the source) travel in the judge spec. Upload, removal, test-case changes and problem edits all take the
+problem row lock, so they run one at a time. Known limits, all recovered by uploading or removing the checker again:
+
+- The source key is fixed and MinIO is not transactional. If a replacement upload fails in the publish (for example
+  a test-case file is missing), the new source stays under the old `spj_version`: it is what judges (under its own
+  hash), while `GET /checker` shows the old version next to it.
+- The publish moves `CURRENT` before the row commits. For a few milliseconds on a first upload the bundle says
+  `spj` while the row does not, so a submit in that window ends as SYSTEM_ERROR and can be rejudged. If the commit
+  itself then fails, the mismatch lasts until the next publish of that problem.
+- Removing a checker keeps `spj.cpp` in MinIO: it is never read while `spj` is false, and the next upload overwrites
+  it (sources are not garbage-collected).
+
 Statistics: `t_problem_stats` holds, per problem, how many submissions ended with each verdict. Only
 terminal verdicts count; a problem's total and accepted numbers are sums over it. The consumer group
 `problem-service-stats` keeps it from `oj.submission.events` (`SubmissionVerdictRecorded`, published by

@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import vn.thanhtuanle.common.util.AfterCommit;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.problem.dto.CheckerResponse;
@@ -120,8 +119,9 @@ public class CheckerService {
     }
 
     /**
-     * Back to comparing outputs: clears the flags and republishes under the row lock; the source is deleted only once
-     * that has committed, since a rollback would leave the row still naming it.
+     * Back to comparing outputs: clears the flags and republishes under the row lock. The source is kept: nothing reads
+     * it while spj is false, the next upload overwrites it, and deleting the fixed key after the commit could land after
+     * a concurrent upload's put.
      */
     @Transactional
     public void remove(String slug) {
@@ -132,7 +132,6 @@ public class CheckerService {
         problem.setSpj(false);
         problem.setSpjVersion(null);
         publisher.publish(problem);
-        AfterCommit.run(() -> sources.deleteQuietly(checkerPath(slug)));
         log.info("Problem {} no longer has a checker", slug);
     }
 

@@ -21,6 +21,7 @@ import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.entity.TestCase;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
 import vn.thanhtuanle.problem.dto.CheckerResponse;
+import vn.thanhtuanle.problem.dto.UpdateProblemDto;
 import vn.thanhtuanle.support.PostgresTest;
 import vn.thanhtuanle.testcase.BundleFile;
 import vn.thanhtuanle.testcase.InMemoryTestCaseSourceStore;
@@ -222,7 +223,8 @@ class CheckerServiceTest extends PostgresTest {
 
         assertThat(row()).containsEntry("spj", false).containsEntry("spj_version", null);
         assertThat(info(lastPublished())).contains("\"spj\" : false").doesNotContain("spj_version");
-        assertThat(sources.files).as("the source is deleted after the commit").doesNotContainKey(slug + "/spj.cpp");
+        assertThat(sources.files).as("a leftover source is inert while spj is false, so it is kept")
+                .containsKey(slug + "/spj.cpp");
     }
 
     @Test
@@ -293,6 +295,49 @@ class CheckerServiceTest extends PostgresTest {
             release.countDown();
             holder.get(10, TimeUnit.SECONDS);
             assertThat(upload.get(10, TimeUnit.SECONDS).spj()).isTrue();
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * A problem edit takes the same row lock, so one that runs during a checker or test-case change cannot write back
+     * the stale spj, spj_version and test_case_high_water it read before that change committed.
+     */
+    @Test
+    void anEditDuringACheckerChangeDoesNotWriteStaleCheckerState() throws Exception {
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> holder = pool.submit(() -> new TransactionTemplate(tm).executeWithoutResult(tx -> {
+                Problem held = problems.findBySlugForUpdate(slug).orElseThrow();
+                held.setSpj(true);
+                held.setSpjVersion("v-from-upload");
+                held.setTestCaseHighWater(7);
+                problems.save(held);
+                locked.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<?> edit = pool.submit(() -> problemService.updateProblem(slug,
+                    UpdateProblemDto.builder().title("renamed").subject("s").timeLimit(1000).memoryLimit(64)
+                            .hardnessLevel(1).build()));
+            assertThatThrownBy(() -> edit.get(500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+
+            release.countDown();
+            holder.get(10, TimeUnit.SECONDS);
+            edit.get(10, TimeUnit.SECONDS);
+            assertThat(jdbc.queryForMap(
+                    "SELECT title, spj, spj_version, test_case_high_water FROM t_problems WHERE problem_slug = ?", slug))
+                    .containsEntry("title", "renamed").containsEntry("spj", true)
+                    .containsEntry("spj_version", "v-from-upload").containsEntry("test_case_high_water", 7);
         } finally {
             release.countDown();
             pool.shutdownNow();

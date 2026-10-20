@@ -39,7 +39,7 @@ class ProblemSoftDeleteTest {
     @Test
     void deletingMarksTheProblemDeletedAndKeepsTheRow() {
         Problem problem = live("a-plus-b");
-        when(problemRepository.findLiveBySlug("a-plus-b")).thenReturn(Optional.of(problem));
+        when(problemRepository.findBySlugForUpdate("a-plus-b")).thenReturn(Optional.of(problem));
 
         problemService.deleteProblem("a-plus-b");
 
@@ -50,7 +50,7 @@ class ProblemSoftDeleteTest {
 
     @Test
     void deletingAMissingOrAlreadyDeletedProblemIs404() {
-        when(problemRepository.findLiveBySlug("gone")).thenReturn(Optional.empty());
+        when(problemRepository.findBySlugForUpdate("gone")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> problemService.deleteProblem("gone"))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -58,7 +58,7 @@ class ProblemSoftDeleteTest {
 
     @Test
     void updatingADeletedProblemIs404() {
-        when(problemRepository.findLiveBySlug("gone")).thenReturn(Optional.empty());
+        when(problemRepository.findBySlugForUpdate("gone")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> problemService.updateProblem("gone", UpdateProblemDto.builder().build()))
                 .isInstanceOf(ResourceNotFoundException.class);
