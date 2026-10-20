@@ -45,6 +45,10 @@ management:
       exposure:
         # Explicit allowlist, NOT '*': a heap dump or the env endpoint would leak credentials.
         include: health,info,prometheus,metrics
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
   endpoint:
     heapdump:
       access: none
