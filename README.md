@@ -29,6 +29,11 @@ certificate: 9090 serves TLS, requires a CA-signed certificate and answers only 
 (`PROBLEM_RPC_TOKEN`, 32+ characters) additionally requires `x-oj-service-token` on every call. With neither,
 the service does not start.
 
+Contests: `GET /api/v1/contests` is the public phase list. `GET /api/v1/contests/all?page=0&size=20&q=` lists every
+contest, DRAFT included, for contest managers (any of `contest:create`, `contest:update`, `contest:delete`): newest
+start first, then slug; `size` defaults to 20 and is capped at 100; `q` is literal text matched against the slug or
+title, ignoring case; the reply carries `data` plus `pagination`. The slug `all` is reserved (400 on create).
+
 Checkers: `PUT/GET/DELETE /problems/{slug}/checker` (`problem:update`) store a C++ checker under its version, at
 `sources/<slug>/spj-<sha256 hex>.cpp`, and republish the bundle with `"spj": true`; the row's `spj` and `spj_version`
 (sha256 of the source) travel in the judge spec. Upload, removal, test-case changes and problem edits all take the

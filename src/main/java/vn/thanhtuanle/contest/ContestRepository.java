@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface ContestRepository extends JpaRepository<Contest, UUID> {
+public interface ContestRepository extends JpaRepository<Contest, UUID>, JpaSpecificationExecutor<Contest> {
 
     /** The contest with its problems, each with its problem row, in one query. */
     @EntityGraph(attributePaths = {"problems", "problems.problem"})

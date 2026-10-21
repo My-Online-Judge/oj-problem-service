@@ -217,6 +217,18 @@ class ContestServiceTest extends PostgresTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("A contest must end after it starts");
     }
 
+    /** GET /contests/all is the managers' list; a contest named "all" would be shadowed by it. */
+    @Test
+    void theSlugAllIsReserved() {
+        String p = problem();
+
+        for (String reserved : List.of("all", "ALL", "All")) {
+            assertThatThrownBy(() -> contests.create(published(reserved, p), true))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessage("Contest slug \"all\" is reserved");
+        }
+        assertThat(contests.create(published("all-stars", p), true).slug()).isEqualTo("all-stars");
+    }
+
     @Test
     void createRejectsATakenSlug() {
         String p = problem();

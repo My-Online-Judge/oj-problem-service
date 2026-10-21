@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.thanhtuanle.common.enums.ProblemStatus;
@@ -19,6 +21,8 @@ import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
+import vn.thanhtuanle.oj.common.web.payload.PageResponse;
+import vn.thanhtuanle.oj.common.web.payload.PageSizes;
 import vn.thanhtuanle.problem.ProblemRepository;
 import vn.thanhtuanle.problem.ProblemService;
 import vn.thanhtuanle.problem.dto.ProblemResponseDto;
@@ -55,6 +59,7 @@ public class ContestService {
     static final int PAST_LIMIT = 50;
     /** Running and upcoming contests together, the earliest start first (so running ones before upcoming). */
     static final int NOT_ENDED_LIMIT = 50;
+    private static final String RESERVED_SLUG = "all";
     private static final String SLUG_INDEX = "ux_contests_slug";
 
     private final ContestRepository contests;
@@ -90,6 +95,20 @@ public class ContestService {
     }
 
     /**
+     * For contest managers: every contest, DRAFT included, newest start first (then by slug), a page at a time, at
+     * most 100 a page. {@code q} (optional) matches a slug or title, ignoring case, as literal text.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<ContestSummary> listAll(int page, int size, String q) {
+        Instant now = clock.instant();
+        PageRequest request = PageRequest.of(page, PageSizes.cap(size),
+                Sort.by(Sort.Direction.DESC, "startsAt").and(Sort.by(Sort.Direction.ASC, "slug")));
+        Page<Contest> found = contests.findAll(ContestSpecifications.matching(q), request);
+        Map<UUID, Integer> counts = problemCounts(found.getContent());
+        return PageResponse.of(found.map(c -> summary(c, now, counts)));
+    }
+
+    /**
      * DRAFT is a 404 for non-editors. The problems stay hidden while the contest is a DRAFT or has not started,
      * unless the caller is both an editor and a problem editor. Problems deleted since they were attached are left
      * out for non-editors; editors keep them, so an edit can send the list back unchanged.
@@ -104,6 +123,10 @@ public class ContestService {
     @Transactional
     public ContestDetail create(ContestRequest r, boolean problemEditor) {
         log.info("Start create contest: {}", r.slug());
+        if (RESERVED_SLUG.equalsIgnoreCase(r.slug())) {
+            // GET /contests/all is the managers' list; a contest with this slug could not be read by its detail URL
+            throw new IllegalArgumentException("Contest slug \"" + RESERVED_SLUG + "\" is reserved");
+        }
         Instant startsAt = seconds(r.startsAt());
         Instant endsAt = seconds(r.endsAt());
         requireWindow(startsAt, endsAt);

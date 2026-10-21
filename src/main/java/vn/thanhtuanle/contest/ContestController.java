@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import vn.thanhtuanle.common.constant.Routes;
@@ -26,6 +27,7 @@ import vn.thanhtuanle.common.security.Authorities;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
 import vn.thanhtuanle.contest.dto.ContestRequest;
+import vn.thanhtuanle.contest.dto.ContestSummary;
 import vn.thanhtuanle.contest.dto.ScoreboardResponse;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
@@ -33,6 +35,7 @@ import vn.thanhtuanle.oj.common.web.payload.ApiResponse;
 import vn.thanhtuanle.problem.ProblemAccess;
 import vn.thanhtuanle.problem.dto.ProblemResponseDto;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -52,6 +55,14 @@ public class ContestController {
     @Operation(summary = "Contests by phase: running, upcoming, past")
     public ApiResponse<ContestListResponse> list() {
         return ApiResponse.success(contests.list(editor()));
+    }
+
+    @GetMapping("/all")
+    @Operation(summary = "Every contest, DRAFT included, newest start first (contest managers)")
+    @PreAuthorize("hasAnyAuthority('contest:create', 'contest:update', 'contest:delete')")
+    public ApiResponse<List<ContestSummary>> all(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String q) {
+        return ApiResponse.success(contests.listAll(page, size, q));
     }
 
     @GetMapping("/{slug}")

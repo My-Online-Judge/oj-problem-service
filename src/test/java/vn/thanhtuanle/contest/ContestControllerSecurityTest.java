@@ -1,16 +1,20 @@
 package vn.thanhtuanle.contest;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,11 +27,13 @@ import vn.thanhtuanle.contest.dto.ProblemCell;
 import vn.thanhtuanle.contest.dto.ScoreboardResponse;
 import vn.thanhtuanle.contest.dto.ScoreboardRow;
 import vn.thanhtuanle.contest.dto.ScoreboardUser;
+import vn.thanhtuanle.contest.dto.ContestSummary;
 import vn.thanhtuanle.oj.common.security.OjJwtAuthenticationFilter;
 import vn.thanhtuanle.oj.common.security.OjJwtDecoders;
 import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
 import vn.thanhtuanle.oj.common.web.error.ResourceNotFoundException;
+import vn.thanhtuanle.oj.common.web.payload.PageResponse;
 import vn.thanhtuanle.oj.common.web.security.OjAccessDeniedHandler;
 import vn.thanhtuanle.oj.common.web.security.OjAuthenticationEntryPoint;
 import vn.thanhtuanle.problem.dto.ProblemResponseDto;
@@ -85,6 +91,68 @@ class ContestControllerSecurityTest {
     private static ContestDetail detail(String slug) {
         return new ContestDetail(slug, "Spring cup", null, START, START.plusSeconds(3 * 3600), ContestStatus.PUBLISHED,
                 ContestPhase.RUNNING, List.of(), Map.of(), NOW);
+    }
+
+    private static PageResponse<ContestSummary> page(String slug) {
+        return PageResponse.<ContestSummary>builder()
+                .data(List.of(new ContestSummary(slug, "Spring cup", START, START.plusSeconds(3 * 3600),
+                        ContestStatus.DRAFT, ContestPhase.UPCOMING, 2)))
+                .page(0).size(20).totalElements(1).totalPages(1).hasPrev(false).hasNext(false).build();
+    }
+
+    @Test
+    void allIs401Anonymous() throws Exception {
+        mockMvc.perform(get(CONTESTS + "/all")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(contests);
+    }
+
+    @Test
+    @WithMockUser(authorities = {"problem:update", "contest:read"})
+    void allIs403ForAUser() throws Exception {
+        mockMvc.perform(get(CONTESTS + "/all")).andExpect(status().isForbidden());
+        verifyNoInteractions(contests);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"contest:create", "contest:update", "contest:delete"})
+    void allIsOkForEachContestAuthority(String authority) throws Exception {
+        when(contests.listAll(2, 5, "cup")).thenReturn(page("spring-cup"));
+
+        mockMvc.perform(get(CONTESTS + "/all").param("page", "2").param("size", "5").param("q", "cup")
+                        .with(SecurityMockMvcRequestPostProcessors.user("manager").authorities(
+                                new SimpleGrantedAuthority(authority))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].slug").value("spring-cup"))
+                .andExpect(jsonPath("$.data[0].status").value("DRAFT"))
+                .andExpect(jsonPath("$.data[0].problemCount").value(2))
+                .andExpect(jsonPath("$.pagination.totalElements").value(1));
+
+        verify(contests).listAll(2, 5, "cup");
+    }
+
+    @Test
+    @WithMockUser(authorities = "contest:update")
+    void allDefaultsToThePageZeroOfTwenty() throws Exception {
+        when(contests.listAll(0, 20, null)).thenReturn(page("spring-cup"));
+
+        mockMvc.perform(get(CONTESTS + "/all")).andExpect(status().isOk());
+
+        verify(contests).listAll(0, 20, null);
+    }
+
+    /** The literal /all mapping wins over /{slug}: it is the list, not a lookup of a contest whose slug is "all". */
+    @Test
+    @WithMockUser(authorities = "contest:update")
+    void allIsNotADetailLookup() throws Exception {
+        when(contests.listAll(0, 20, null)).thenReturn(page("spring-cup"));
+        when(contests.detail(eq("all"), anyBoolean(), anyBoolean(), any()))
+                .thenThrow(new ResourceNotFoundException("Contest not found: all"));
+
+        mockMvc.perform(get(CONTESTS + "/all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].slug").value("spring-cup"));
+
+        verify(contests, never()).detail(eq("all"), anyBoolean(), anyBoolean(), any());
     }
 
     @Test
