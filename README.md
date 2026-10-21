@@ -40,7 +40,7 @@ Checkers: `PUT/GET/DELETE /problems/{slug}/checker` (`problem:update`) store a C
 problem row lock, so they run one at a time. Every reader (the judge spec, `GET /checker`, export) reads the key the
 row's `spj_version` names, so it always gets the source its row names: a replacement upload whose publish fails rolls
 the row back to the old version, whose key is untouched. A checker stored before versioned keys, at
-`sources/<slug>/spj.cpp`, is still served while its sha256 equals the row's `spj_version` (logged at INFO). Known
+`sources/<slug>/spj.cpp`, is still served while its sha256 equals the row's `spj_version` (logged at DEBUG). Known
 limits, all recovered by uploading or removing the checker again:
 
 - The publish moves `CURRENT` before the row commits. For a few milliseconds on a first upload the bundle says
