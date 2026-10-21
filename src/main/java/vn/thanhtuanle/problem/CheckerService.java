@@ -55,19 +55,23 @@ public class CheckerService {
     }
 
     /**
-     * The checker source of this version: the versioned key, else the legacy key while its content is exactly this
-     * version. Empty when neither holds it.
+     * The checker source of this version: the versioned key, else the legacy key, each only while its content is
+     * exactly this version (so a corrupt or replaced object is never served as the checker its row names). Empty
+     * when neither holds it.
      *
      * @throws vn.thanhtuanle.testcase.TestCaseBundleException when the storage cannot be read
      */
     public static Optional<byte[]> readSource(TestCaseSourceStore sources, String slug, String version) {
         Optional<byte[]> versioned = sources.get(checkerPath(slug, version));
         if (versioned.isPresent()) {
-            return versioned;
+            if (versionOf(versioned.get()).equals(version)) {
+                return versioned;
+            }
+            log.warn("Checker source {} does not match its version", checkerPath(slug, version));
         }
         Optional<byte[]> legacy = sources.get(legacyCheckerPath(slug)).filter(bytes -> versionOf(bytes).equals(version));
         if (legacy.isPresent()) {
-            log.info("serving the legacy checker key for {}", slug);
+            log.debug("Serving the legacy checker key for {}", slug);
         }
         return legacy;
     }

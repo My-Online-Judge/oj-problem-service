@@ -230,4 +230,17 @@ class ProblemInternalGrpcCheckerTest {
         assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.FAILED_PRECONDITION);
         assertThat(e.getStatus().getDescription()).isEqualTo("Checker source missing for problem: " + slug);
     }
+
+    /** A corrupt versioned object does not hide a legacy key that matches the row. */
+    @Test
+    void aTamperedVersionedKeyFallsThroughToAMatchingLegacyKey() throws Exception {
+        String slug = problem(sha256(CHECKER));
+        sources.put(slug + "/spj-" + sha256(CHECKER) + ".cpp", (CHECKER + "// tampered\n").getBytes(StandardCharsets.UTF_8));
+        storeLegacyChecker(slug, CHECKER);
+
+        JudgeSpec spec = spec(slug);
+
+        assertThat(spec.getSpjSource()).isEqualTo(CHECKER);
+        assertThat(spec.getSpjVersion()).isEqualTo(sha256(CHECKER));
+    }
 }

@@ -75,9 +75,16 @@ class CheckerServiceTest extends PostgresTest {
         }
     }
 
-    /** In-memory files that run {@link #beforeRead} on every read. */
+    /** In-memory files that run {@link #beforeRead} on every read and note every delete. */
     static class ProbedSources extends InMemoryTestCaseSourceStore {
         volatile Runnable beforeRead = () -> { };
+        final List<String> deleted = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void deleteQuietly(String path) {
+            deleted.add(path);
+            super.deleteQuietly(path);
+        }
 
         @Override
         public Optional<byte[]> get(String path) {
@@ -126,6 +133,7 @@ class CheckerServiceTest extends PostgresTest {
                 DELETE FROM t_test_cases WHERE problem_id IN (SELECT id FROM t_problems WHERE problem_slug LIKE 'chk-%')""");
         jdbc.update("DELETE FROM t_problems WHERE problem_slug LIKE 'chk-%'");
         sources.files.clear();
+        sources.deleted.clear();
         sources.beforeRead = () -> { };
         Mockito.reset(bundleStore);
     }
@@ -268,7 +276,7 @@ class CheckerServiceTest extends PostgresTest {
         assertThat(sources.files.get(key(sha256(v1)))).isEqualTo(v1);
     }
 
-    /** A remove keeps every key, so an upload right after it can never lose its source to a late delete. */
+    /** Nothing is ever deleted, so an upload right after a remove can never lose its source to a late delete. */
     @Test
     void removeThenUploadKeepsTheNewSource() throws Exception {
         byte[] v1 = utf8(CHECKER);
@@ -278,9 +286,52 @@ class CheckerServiceTest extends PostgresTest {
         checkers.remove(slug);
         checkers.upload(slug, file(v2));
 
+        assertThat(sources.deleted).as("neither the remove nor the upload deletes a key").isEmpty();
         assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(v2), CHECKER + "// v2\n"));
         assertThat(checkerKeys()).as("v1 stays as garbage, by design")
                 .containsExactlyInAnyOrder(key(sha256(v1)), key(sha256(v2)));
+    }
+
+    /** A versioned key whose content hashes to another version is no checker: GET does not serve it. */
+    @Test
+    void aSourceThatDoesNotMatchItsVersionIsNotServed() throws Exception {
+        byte[] source = utf8(CHECKER);
+        checkers.upload(slug, file(source));
+        sources.put(key(sha256(source)), utf8(CHECKER + "// tampered\n"));
+
+        assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(source), null));
+    }
+
+    /** A checker stored before versioned keys is served while its content is the row's version. */
+    @Test
+    void aLegacyKeyMatchingTheVersionIsServedByGet() throws Exception {
+        byte[] source = utf8(CHECKER);
+        checkers.upload(slug, file(source));
+        sources.files.remove(key(sha256(source)));
+        sources.put(slug + "/spj.cpp", source);
+
+        assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(source), CHECKER));
+    }
+
+    @Test
+    void aLegacyKeyWithAnotherVersionIsNotServedByGet() throws Exception {
+        byte[] source = utf8(CHECKER);
+        checkers.upload(slug, file(source));
+        sources.files.remove(key(sha256(source)));
+        sources.put(slug + "/spj.cpp", utf8(CHECKER + "// v2\n"));
+
+        assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(source), null));
+    }
+
+    /** A corrupt versioned object does not hide a legacy key that matches the row. */
+    @Test
+    void aTamperedVersionedKeyFallsThroughToAMatchingLegacyKey() throws Exception {
+        byte[] source = utf8(CHECKER);
+        checkers.upload(slug, file(source));
+        sources.put(key(sha256(source)), utf8(CHECKER + "// tampered\n"));
+        sources.put(slug + "/spj.cpp", source);
+
+        assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(source), CHECKER));
     }
 
     @Test

@@ -19,7 +19,6 @@ import vn.thanhtuanle.problem.CheckerService;
 import vn.thanhtuanle.testcase.TestCaseBundleException;
 import vn.thanhtuanle.testcase.TestCaseBundleStore;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -92,18 +91,13 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
                         .asRuntimeException());
                 return;
             }
-            boolean matches = checker.isPresent()
-                    && CheckerService.versionOf(checker.get().getBytes(StandardCharsets.UTF_8)).equals(p.spjVersion());
-            if (!matches) {
-                if (checker.isPresent()) {
-                    log.warn("Problem {}: checker source does not match the row's version {}", slug, p.spjVersion());
-                }
+            if (checker.isEmpty()) {
                 responseObserver.onError(Status.FAILED_PRECONDITION
                         .withDescription("Checker source missing for problem: " + slug).asRuntimeException());
                 return;
             }
-            // The key is the version now: the source sent is the one the row names, and the version sent names it
-            // exactly (checked above), as qduoj keeps each sandbox's compiled checker by version.
+            // The source is the one the row names (readSource checks its hash), and the version sent names it
+            // exactly, as qduoj keeps each sandbox's compiled checker by version.
             spec.setSpjSource(checker.get()).setSpjVersion(p.spjVersion());
         }
         responseObserver.onNext(spec.build());

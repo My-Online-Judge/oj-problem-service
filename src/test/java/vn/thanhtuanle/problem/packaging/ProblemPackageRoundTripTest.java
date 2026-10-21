@@ -374,6 +374,48 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
                 .andExpect(status().isInternalServerError());
     }
 
+    /** The export never launders a tampered object into a package: the import would hash it as a new version. */
+    @Test
+    void aTamperedCheckerSourceFailsTheExportBeforeStreaming() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+        checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", utf8(CHECKER)));
+        String key = slug + "/spj-" + sha256(utf8(CHECKER)) + ".cpp";
+        sources.put(key, utf8(CHECKER + "// tampered\n"));
+
+        assertThatThrownBy(() -> packages.plan(slug))
+                .isInstanceOf(TestCaseBundleException.class)
+                .hasMessageContaining(key);
+        mvc.perform(get(EXPORT, slug).with(admin("problem:update")))
+                .andExpect(request().asyncNotStarted())
+                .andExpect(status().isInternalServerError());
+    }
+
+    @Test
+    void aLegacyCheckerKeyMatchingTheVersionIsExported() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+        byte[] checker = utf8(CHECKER);
+        checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", checker));
+        sources.files.remove(slug + "/spj-" + sha256(checker) + ".cpp");
+        sources.put(slug + "/spj.cpp", checker);
+
+        assertThat(unzip(export(slug)).get("spj.cpp")).isEqualTo(checker);
+    }
+
+    @Test
+    void aLegacyCheckerKeyWithAnotherVersionFailsTheExport() throws Exception {
+        String slug = newSlug("rt");
+        seed(slug);
+        checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", utf8(CHECKER)));
+        sources.files.remove(slug + "/spj-" + sha256(utf8(CHECKER)) + ".cpp");
+        sources.put(slug + "/spj.cpp", utf8(CHECKER + "// v2\n"));
+
+        mvc.perform(get(EXPORT, slug).with(admin("problem:update")))
+                .andExpect(request().asyncNotStarted())
+                .andExpect(status().isInternalServerError());
+    }
+
     @Test
     void exportOfAnUnknownSlugIs404() throws Exception {
         mvc.perform(get(EXPORT, PREFIX + "no-such-problem").with(admin("problem:update")))
