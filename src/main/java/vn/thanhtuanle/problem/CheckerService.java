@@ -21,13 +21,16 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Optional;
 
 /**
  * A problem's checker (special judge): a C++ program that qduoj runs as {@code spj <input_file> <user_output_file>},
- * exit code 0 for Accepted and 1 for Wrong Answer. Its source is stored next to the test cases, at
- * {@code <slug>/spj.cpp} (MinIO {@code sources/<slug>/spj.cpp}); the problem row says that it has one ({@code spj}) and
- * which ({@code spj_version}, the sha256 hex of the source). Like a test-case change, every change republishes the
- * bundle under the problem's row lock, and the version in the bundle's {@code info} gives it a new hash.
+ * exit code 0 for Accepted and 1 for Wrong Answer. The problem row says that it has one ({@code spj}) and which
+ * ({@code spj_version}, the sha256 hex of the source). The source is stored next to the test cases under its version,
+ * at {@code <slug>/spj-<version>.cpp} (MinIO {@code sources/<slug>/spj-<version>.cpp}), so a key never changes content:
+ * every reader gets the source its row names, a replacement that rolls back leaves the old source readable, and no
+ * key is ever deleted. Like a test-case change, every change republishes the bundle under the problem's row lock, and
+ * the version in the bundle's {@code info} gives it a new hash.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,9 +44,32 @@ public class CheckerService {
     private final TestCaseSourceStore sources;
     private final TestCaseBundlePublisher publisher;
 
-    /** Where the problem's checker source is stored: {@code <slug>/spj.cpp}. */
-    public static String checkerPath(String slug) {
+    /** Where the problem's checker source of this version is stored: {@code <slug>/spj-<version>.cpp}. */
+    public static String checkerPath(String slug, String version) {
+        return slug + "/spj-" + version + ".cpp";
+    }
+
+    /** Where checkers were stored before they were keyed by version: {@code <slug>/spj.cpp}. Read, never written. */
+    public static String legacyCheckerPath(String slug) {
         return slug + "/" + CHECKER_FILE;
+    }
+
+    /**
+     * The checker source of this version: the versioned key, else the legacy key while its content is exactly this
+     * version. Empty when neither holds it.
+     *
+     * @throws vn.thanhtuanle.testcase.TestCaseBundleException when the storage cannot be read
+     */
+    public static Optional<byte[]> readSource(TestCaseSourceStore sources, String slug, String version) {
+        Optional<byte[]> versioned = sources.get(checkerPath(slug, version));
+        if (versioned.isPresent()) {
+            return versioned;
+        }
+        Optional<byte[]> legacy = sources.get(legacyCheckerPath(slug)).filter(bytes -> versionOf(bytes).equals(version));
+        if (legacy.isPresent()) {
+            log.info("serving the legacy checker key for {}", slug);
+        }
+        return legacy;
     }
 
     /**
@@ -87,18 +113,21 @@ public class CheckerService {
         if (!problem.isSpj()) {
             return new CheckerResponse(false, null, null);
         }
-        String source = sources.get(checkerPath(slug))
+        String version = problem.getSpjVersion();
+        String source = readSource(sources, slug, version)
                 .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
                 .orElseGet(() -> {
-                    log.warn("Problem {} has a checker, but its source {} is not stored", slug, checkerPath(slug));
+                    log.warn("Problem {} has a checker, but its source {} is not stored", slug, checkerPath(slug, version));
                     return null;
                 });
         return new CheckerResponse(true, problem.getSpjVersion(), source);
     }
 
     /**
-     * Stores the source as the problem's checker, replacing any earlier one, and republishes the bundle while the
-     * problem row is locked, so two changes of one problem cannot interleave (as test-case changes do).
+     * Stores the source under its version and makes it the problem's checker, replacing any earlier one, then
+     * republishes the bundle while the problem row is locked, so two changes of one problem cannot interleave (as
+     * test-case changes do). Nothing is deleted: if the transaction rolls back, the row still names the previous
+     * version, whose key is untouched.
      */
     @Transactional
     public CheckerResponse upload(String slug, MultipartFile file) {
@@ -110,7 +139,7 @@ public class CheckerService {
 
         Problem problem = problemRepository.findBySlugForUpdate(slug).orElseThrow(() -> notFound(slug));
         String version = versionOf(source);
-        sources.put(checkerPath(slug), source);
+        sources.put(checkerPath(slug, version), source);
         problem.setSpj(true);
         problem.setSpjVersion(version);
         publisher.publish(problem);
@@ -119,9 +148,9 @@ public class CheckerService {
     }
 
     /**
-     * Back to comparing outputs: clears the flags and republishes under the row lock. The source is kept: nothing reads
-     * it while spj is false, the next upload overwrites it, and deleting the fixed key after the commit could land after
-     * a concurrent upload's put.
+     * Back to comparing outputs: clears the flags and republishes under the row lock. Every source key is kept: nothing
+     * reads them while spj is false, and a key is shared by every upload of the same source, so deleting one could
+     * remove a source that a concurrent or later upload relies on (sources are not garbage-collected).
      */
     @Transactional
     public void remove(String slug) {

@@ -88,8 +88,8 @@ public class ProblemService {
     /**
      * Creates a problem from an imported package, by {@link #createProblem}'s rules. Each test case keeps its package
      * name ({@code <slug>/<name>.in|out}) and its sample flag. A {@code checkerSource} (null: none) follows an upload's
-     * rules ({@link CheckerService#requireValidSource}); it is stored and the problem marked as judged by it before the
-     * bundle is published, so the first bundle already carries it.
+     * rules ({@link CheckerService#requireValidSource}); it is stored under its version and the problem marked as judged
+     * by it before the bundle is published, so the first bundle already carries it.
      */
     @Transactional
     public ProblemResponseDto createFromPackage(CreateProblemDto dto, List<PackagedTestCase> cases,
@@ -115,9 +115,10 @@ public class ProblemService {
                     .build());
         }
         if (checkerSource != null) {
-            sources.put(CheckerService.checkerPath(problem.getProblemSlug()), checkerSource);
+            String version = CheckerService.versionOf(checkerSource);
+            sources.put(CheckerService.checkerPath(problem.getProblemSlug(), version), checkerSource);
             problem.setSpj(true);
-            problem.setSpjVersion(CheckerService.versionOf(checkerSource));
+            problem.setSpjVersion(version);
         }
         return saveAndPublish(problem);
     }

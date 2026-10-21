@@ -86,7 +86,7 @@ class ProblemPackageControllerSecurityTest {
     @WithMockUser(authorities = "problem:update")
     void exportSetsTheDownloadHeaders() throws Exception {
         CreateProblemDto problem = CreateProblemDto.builder().problemSlug("two-sum").build();
-        when(packages.plan("two-sum")).thenReturn(new ProblemPackageService.PackagePlan(problem, List.of(), null));
+        when(packages.plan("two-sum")).thenReturn(new ProblemPackageService.PackagePlan(problem, List.of(), null, null));
         CountDownLatch requestThreadDone = new CountDownLatch(1);
         doAnswer(write -> requestThreadDone.await(10, TimeUnit.SECONDS)).when(packages).write(any(), any());
 

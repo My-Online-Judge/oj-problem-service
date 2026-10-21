@@ -28,7 +28,7 @@ import java.util.UUID;
  * Status codes are part of the contract: the caller's circuit breaker counts NOT_FOUND and FAILED_PRECONDITION
  * as answers, and retries only UNAVAILABLE. A contest submission that its contest cannot take is a FAILED_PRECONDITION
  * carrying {@link ProblemRpcReasons#contestNotRunning()}, so the caller tells it apart from a missing bundle. A problem
- * judged by a checker whose source is missing is a FAILED_PRECONDITION too.
+ * judged by a checker whose source is missing, or does not hash to the row's version, is a FAILED_PRECONDITION too.
  */
 @Service
 @RequiredArgsConstructor
@@ -85,22 +85,26 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
         if (p.spj()) {
             Optional<String> checker;
             try {
-                checker = queries.checkerSource(slug);
+                checker = queries.checkerSource(slug, p.spjVersion());
             } catch (TestCaseBundleException e) {
                 log.warn("Checker storage unreadable while serving the judge spec of {}: {}", slug, e.getMessage());
                 responseObserver.onError(Status.UNAVAILABLE.withDescription("Test-case storage unavailable")
                         .asRuntimeException());
                 return;
             }
-            if (checker.isEmpty()) {
+            boolean matches = checker.isPresent()
+                    && CheckerService.versionOf(checker.get().getBytes(StandardCharsets.UTF_8)).equals(p.spjVersion());
+            if (!matches) {
+                if (checker.isPresent()) {
+                    log.warn("Problem {}: checker source does not match the row's version {}", slug, p.spjVersion());
+                }
                 responseObserver.onError(Status.FAILED_PRECONDITION
                         .withDescription("Checker source missing for problem: " + slug).asRuntimeException());
                 return;
             }
-            // The version names exactly the source sent, not the row's: an upload stores its source before it commits
-            // its version, and qduoj keeps each sandbox's compiled checker by version.
-            spec.setSpjSource(checker.get())
-                    .setSpjVersion(CheckerService.versionOf(checker.get().getBytes(StandardCharsets.UTF_8)));
+            // The key is the version now: the source sent is the one the row names, and the version sent names it
+            // exactly (checked above), as qduoj keeps each sandbox's compiled checker by version.
+            spec.setSpjSource(checker.get()).setSpjVersion(p.spjVersion());
         }
         responseObserver.onNext(spec.build());
         responseObserver.onCompleted();

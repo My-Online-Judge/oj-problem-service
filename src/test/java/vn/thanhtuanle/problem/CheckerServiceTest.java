@@ -25,6 +25,7 @@ import vn.thanhtuanle.problem.dto.UpdateProblemDto;
 import vn.thanhtuanle.support.PostgresTest;
 import vn.thanhtuanle.testcase.BundleFile;
 import vn.thanhtuanle.testcase.InMemoryTestCaseSourceStore;
+import vn.thanhtuanle.testcase.TestCaseBundleException;
 import vn.thanhtuanle.testcase.TestCaseBundlePublisher;
 import vn.thanhtuanle.testcase.TestCaseBundleStore;
 
@@ -56,6 +57,7 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * A problem's checker on Postgres: upload, read and removal, with test-case files in memory and the real bundle
@@ -140,6 +142,16 @@ class CheckerServiceTest extends PostgresTest {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
     }
 
+    /** Where a checker of this version is stored: {@code <slug>/spj-<sha256 hex>.cpp}. */
+    private String key(String version) {
+        return slug + "/spj-" + version + ".cpp";
+    }
+
+    /** Every stored key of the problem that holds a checker source, versioned or legacy. */
+    private List<String> checkerKeys() {
+        return sources.files.keySet().stream().filter(k -> k.startsWith(slug + "/spj")).sorted().toList();
+    }
+
     private Map<String, Object> row() {
         return jdbc.queryForMap("SELECT spj, spj_version FROM t_problems WHERE problem_slug = ?", slug);
     }
@@ -173,7 +185,7 @@ class CheckerServiceTest extends PostgresTest {
         assertThat(version).hasSize(64);
         assertThat(response).isEqualTo(new CheckerResponse(true, version, null));
         assertThat(row()).containsEntry("spj", true).containsEntry("spj_version", version);
-        assertThat(sources.files.get(slug + "/spj.cpp")).isEqualTo(source);
+        assertThat(sources.files.get(key(version))).isEqualTo(source);
         assertThat(info(lastPublished())).contains("\"spj\" : true").contains("\"spj_version\" : \"" + version + "\"");
         assertThat(problemService.getProblemBySlug(slug, true).isSpj()).as("the problem's public spj flag").isTrue();
     }
@@ -187,7 +199,7 @@ class CheckerServiceTest extends PostgresTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("A checker is at most 64 KiB");
         assertThat(row()).containsEntry("spj", false).containsEntry("spj_version", null);
-        assertThat(sources.files).doesNotContainKey(slug + "/spj.cpp");
+        assertThat(checkerKeys()).isEmpty();
         verify(bundleStore, never()).publish(anyString(), anyList());
 
         byte[] atTheLimit = Arrays.copyOf(tooBig, 65_536);
@@ -202,7 +214,7 @@ class CheckerServiceTest extends PostgresTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("A checker must be UTF-8 text");
         assertThat(row()).containsEntry("spj", false);
-        assertThat(sources.files).doesNotContainKey(slug + "/spj.cpp");
+        assertThat(checkerKeys()).isEmpty();
         verify(bundleStore, never()).publish(anyString(), anyList());
     }
 
@@ -215,7 +227,7 @@ class CheckerServiceTest extends PostgresTest {
     }
 
     @Test
-    void removeClearsAndRepublishes() {
+    void removeClearsAndRepublishes() throws Exception {
         checkers.upload(slug, file(utf8(CHECKER)));
         clearInvocations(bundleStore);
 
@@ -224,7 +236,51 @@ class CheckerServiceTest extends PostgresTest {
         assertThat(row()).containsEntry("spj", false).containsEntry("spj_version", null);
         assertThat(info(lastPublished())).contains("\"spj\" : false").doesNotContain("spj_version");
         assertThat(sources.files).as("a leftover source is inert while spj is false, so it is kept")
-                .containsKey(slug + "/spj.cpp");
+                .containsKey(key(sha256(utf8(CHECKER))));
+    }
+
+    @Test
+    void anUploadStoresTheSourceUnderItsVersion() throws Exception {
+        byte[] source = utf8(CHECKER);
+
+        checkers.upload(slug, file(source));
+
+        assertThat(checkerKeys()).containsExactly(key(sha256(source)));
+        assertThat(sources.files.get(key(sha256(source)))).isEqualTo(source);
+        assertThat(sources.files).as("no legacy key is written").doesNotContainKey(slug + "/spj.cpp");
+    }
+
+    /**
+     * A replacement whose publish fails rolls the row back to v1, and v1's source is still under v1's key: readers get
+     * the source their row names, never v2's source under v1's version.
+     */
+    @Test
+    void aFailedReplacementKeepsThePreviousSourceReadable() throws Exception {
+        byte[] v1 = utf8(CHECKER);
+        byte[] v2 = utf8(CHECKER + "// v2\n");
+        checkers.upload(slug, file(v1));
+        when(bundleStore.publish(eq(slug), anyList())).thenThrow(new TestCaseBundleException("MinIO is down"));
+
+        assertThatThrownBy(() -> checkers.upload(slug, file(v2))).isInstanceOf(TestCaseBundleException.class);
+
+        assertThat(row()).containsEntry("spj", true).containsEntry("spj_version", sha256(v1));
+        assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(v1), CHECKER));
+        assertThat(sources.files.get(key(sha256(v1)))).isEqualTo(v1);
+    }
+
+    /** A remove keeps every key, so an upload right after it can never lose its source to a late delete. */
+    @Test
+    void removeThenUploadKeepsTheNewSource() throws Exception {
+        byte[] v1 = utf8(CHECKER);
+        byte[] v2 = utf8(CHECKER + "// v2\n");
+        checkers.upload(slug, file(v1));
+
+        checkers.remove(slug);
+        checkers.upload(slug, file(v2));
+
+        assertThat(checkers.get(slug)).isEqualTo(new CheckerResponse(true, sha256(v2), CHECKER + "// v2\n"));
+        assertThat(checkerKeys()).as("v1 stays as garbage, by design")
+                .containsExactlyInAnyOrder(key(sha256(v1)), key(sha256(v2)));
     }
 
     @Test

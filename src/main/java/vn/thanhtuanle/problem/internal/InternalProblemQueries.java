@@ -31,10 +31,11 @@ public class InternalProblemQueries {
 
     /**
      * A problem's identity and limits, as the judge needs them; {@code active} is false for an INACTIVE problem, and
-     * {@code spj} is true for one judged by a checker ({@link #checkerSource}).
+     * {@code spj} is true for one judged by a checker ({@link #checkerSource}) of version {@code spjVersion} (null
+     * without a checker).
      */
     public record ProblemLimits(UUID id, String slug, int timeLimitMs, long memoryLimitMb, boolean active,
-                                boolean spj) {
+                                boolean spj, String spjVersion) {
     }
 
     /** A test case users may see; {@code name} is the judge's name for it (the file stem). */
@@ -46,17 +47,17 @@ public class InternalProblemQueries {
     public Optional<ProblemLimits> liveProblem(String slug) {
         return problemRepository.findLiveBySlug(slug)
                 .map(p -> new ProblemLimits(p.getId(), p.getProblemSlug(), p.getTimeLimit(), p.getMemoryLimit(),
-                        p.getStatus() == ProblemStatus.ACTIVE.getValue(), p.isSpj()));
+                        p.getStatus() == ProblemStatus.ACTIVE.getValue(), p.isSpj(), p.getSpjVersion()));
     }
 
     /**
-     * The problem's checker source, or empty when none is stored. Read with no transaction, like the sample files, so a
-     * slow MinIO never holds a database connection.
+     * The problem's checker source of this version ({@link CheckerService#readSource}), or empty when none is stored.
+     * Read with no transaction, like the sample files, so a slow MinIO never holds a database connection.
      *
      * @throws vn.thanhtuanle.testcase.TestCaseBundleException when the storage cannot be read
      */
-    public Optional<String> checkerSource(String slug) {
-        return sources.get(CheckerService.checkerPath(slug)).map(bytes -> new String(bytes, StandardCharsets.UTF_8));
+    public Optional<String> checkerSource(String slug, String version) {
+        return CheckerService.readSource(sources, slug, version).map(bytes -> new String(bytes, StandardCharsets.UTF_8));
     }
 
     /** Those of these slugs anyone may see (ACTIVE), in one query: unknown, INACTIVE and deleted ones drop out. */

@@ -67,7 +67,7 @@ class ProblemInternalGrpcCheckerTest {
 
         @Override
         public Optional<byte[]> get(String path) {
-            if (path.endsWith("/spj.cpp")) {
+            if (path.matches(".*/spj(-[0-9a-f]{64})?\\.cpp")) {
                 transactionOpenOnCheckerRead.add(TransactionSynchronizationManager.isActualTransactionActive());
             }
             if (unreachable) {
@@ -122,7 +122,13 @@ class ProblemInternalGrpcCheckerTest {
         return slug;
     }
 
-    private void storeChecker(String slug, String source) {
+    /** Stores the source under its versioned key, {@code <slug>/spj-<sha256 hex>.cpp}, as an upload does. */
+    private void storeChecker(String slug, String source) throws Exception {
+        sources.put(slug + "/spj-" + sha256(source) + ".cpp", source.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Stores the source under the key used before SP14, {@code <slug>/spj.cpp}. */
+    private void storeLegacyChecker(String slug, String source) {
         sources.put(slug + "/spj.cpp", source.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -175,20 +181,53 @@ class ProblemInternalGrpcCheckerTest {
         assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.UNAVAILABLE);
     }
 
-    /**
-     * An upload stores the new source before its transaction commits the new version, so for a moment the row still
-     * names the old one. qduoj keeps each sandbox's compiled checker by version, so the version sent always names the
-     * source sent: otherwise a sandbox could keep the new checker under the old version's name.
-     */
+    /** The row names v1 while the store holds v1 and v2 (a later upload that did not commit): v1 is sent. */
     @Test
-    void theVersionSentNamesTheSourceSent() throws Exception {
-        String replacement = CHECKER + "// v2\n";
+    void judgeSpecReadsTheRowsVersion() throws Exception {
+        String v2 = CHECKER + "// v2\n";
         String slug = problem(sha256(CHECKER));
-        storeChecker(slug, replacement);
+        storeChecker(slug, CHECKER);
+        storeChecker(slug, v2);
 
         JudgeSpec spec = spec(slug);
 
-        assertThat(spec.getSpjSource()).isEqualTo(replacement);
-        assertThat(spec.getSpjVersion()).isEqualTo(sha256(replacement));
+        assertThat(spec.getSpjSource()).isEqualTo(CHECKER);
+        assertThat(spec.getSpjVersion()).isEqualTo(sha256(CHECKER));
+    }
+
+    /** A versioned key whose content hashes to something else (a corrupt object) is no checker at all. */
+    @Test
+    void aSourceThatDoesNotMatchItsVersionIsMissing() throws Exception {
+        String slug = problem(sha256(CHECKER));
+        sources.put(slug + "/spj-" + sha256(CHECKER) + ".cpp", (CHECKER + "// tampered\n").getBytes(StandardCharsets.UTF_8));
+
+        StatusRuntimeException e = catchThrowableOfType(StatusRuntimeException.class, () -> spec(slug));
+
+        assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.FAILED_PRECONDITION);
+        assertThat(e.getStatus().getDescription()).isEqualTo("Checker source missing for problem: " + slug);
+    }
+
+    /** A checker uploaded before SP14 is still at {@code <slug>/spj.cpp}: it is served while it is the row's version. */
+    @Test
+    void aLegacyKeyMatchingTheVersionIsServed() throws Exception {
+        String slug = problem(sha256(CHECKER));
+        storeLegacyChecker(slug, CHECKER);
+
+        JudgeSpec spec = spec(slug);
+
+        assertThat(spec.getSpjSource()).isEqualTo(CHECKER);
+        assertThat(spec.getSpjVersion()).isEqualTo(sha256(CHECKER));
+        assertThat(sources.transactionOpenOnCheckerRead).as("versioned key, then legacy key").containsExactly(false, false);
+    }
+
+    @Test
+    void aLegacyKeyWithAnotherVersionIsMissing() throws Exception {
+        String slug = problem(sha256(CHECKER));
+        storeLegacyChecker(slug, CHECKER + "// v2\n");
+
+        StatusRuntimeException e = catchThrowableOfType(StatusRuntimeException.class, () -> spec(slug));
+
+        assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.FAILED_PRECONDITION);
+        assertThat(e.getStatus().getDescription()).isEqualTo("Checker source missing for problem: " + slug);
     }
 }

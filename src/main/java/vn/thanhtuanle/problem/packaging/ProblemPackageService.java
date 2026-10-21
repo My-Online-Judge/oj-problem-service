@@ -31,6 +31,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -65,9 +66,11 @@ public class ProblemPackageService {
 
     /**
      * Everything an export writes, read before the response streams; {@link #write} needs no database.
-     * {@code checkerPath} is where the problem's checker source is stored, or null without a checker.
+     * {@code checkerVersion} is the version of the problem's checker, and {@code checkerPath} where that source is
+     * stored ({@link CheckerService#checkerPath(String, String)}); both null without a checker (spj false).
      */
-    public record PackagePlan(CreateProblemDto problem, List<PlannedTestCase> testCases, String checkerPath) {
+    public record PackagePlan(CreateProblemDto problem, List<PlannedTestCase> testCases, String checkerPath,
+                              String checkerVersion) {
 
         ProblemPackage toPackage() {
             List<String> samples = testCases.stream().filter(PlannedTestCase::sample).map(PlannedTestCase::name).toList();
@@ -92,7 +95,7 @@ public class ProblemPackageService {
             requireStored(tc.inputPath());
             requireStored(tc.outputPath());
         }
-        if (plan.checkerPath() != null && !sources.exists(plan.checkerPath())) {
+        if (plan.checkerPath() != null && checkerSource(plan).isEmpty()) {
             throw new TestCaseBundleException(
                     "Checker source " + plan.checkerPath() + " is not stored; upload the checker again");
         }
@@ -123,8 +126,10 @@ public class ProblemPackageService {
                 .map(tc -> new PlannedTestCase(nameOf(tc.getInput()), tc.getInput(), tc.getOutput(), tc.isSample()))
                 .sorted(byName(PlannedTestCase::name).thenComparing(PlannedTestCase::inputPath))
                 .toList();
+        String checkerVersion = problem.isSpj() ? problem.getSpjVersion() : null;
         return new PackagePlan(dto, withImportableNames(testCases),
-                problem.isSpj() ? CheckerService.checkerPath(problem.getProblemSlug()) : null);
+                problem.isSpj() ? CheckerService.checkerPath(problem.getProblemSlug(), checkerVersion) : null,
+                checkerVersion);
     }
 
     /**
@@ -162,7 +167,7 @@ public class ProblemPackageService {
         ZipOutputStream zip = new ZipOutputStream(out);
         putEntry(zip, PROBLEM_JSON, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(plan.toPackage()));
         if (plan.checkerPath() != null) {
-            putEntry(zip, CheckerService.CHECKER_FILE, sources.get(plan.checkerPath()).orElseThrow(
+            putEntry(zip, CheckerService.CHECKER_FILE, checkerSource(plan).orElseThrow(
                     () -> new TestCaseBundleException("Checker source " + plan.checkerPath() + " is not stored")));
         }
         for (PlannedTestCase tc : plan.testCases()) {
@@ -170,6 +175,11 @@ public class ProblemPackageService {
             putEntry(zip, TEST_CASE_DIR + tc.name() + OUT, read(tc.outputPath()));
         }
         zip.finish(); // the servlet container closes the response stream
+    }
+
+    /** The plan's checker source, by the row's version ({@link CheckerService#readSource}). */
+    private Optional<byte[]> checkerSource(PackagePlan plan) {
+        return CheckerService.readSource(sources, plan.problem().getProblemSlug(), plan.checkerVersion());
     }
 
     /**

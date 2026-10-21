@@ -329,9 +329,33 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
         String version = sha256(checker);
         assertThat(jdbc.queryForMap("SELECT spj, spj_version FROM t_problems WHERE problem_slug = ?", copy))
                 .containsEntry("spj", true).containsEntry("spj_version", version);
-        assertThat(sources.files.get(copy + "/spj.cpp")).isEqualTo(checker);
+        assertThat(sources.files.get(copy + "/spj-" + version + ".cpp")).isEqualTo(checker);
         verify(bundleStore, times(1)).publish(anyString(), anyList());
         assertThat(publishedInfo(copy)).contains("\"spj\" : true").contains("\"spj_version\" : \"" + version + "\"");
+    }
+
+    /**
+     * The export reads the source the row's version names, not whatever sits under the legacy key: a stale
+     * {@code <slug>/spj.cpp} is ignored, and the copy's export gives an identical {@code spj.cpp}.
+     */
+    @Test
+    void exportReadsTheVersionedSource() throws Exception {
+        String slug = newSlug("rt");
+        String copy = slug + "-copy";
+        seed(slug);
+        byte[] checker = utf8(CHECKER);
+        checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", checker));
+        sources.put(slug + "/spj.cpp", utf8("// a stale legacy source\nint main() { return 1; }\n"));
+
+        byte[] pkg = export(slug);
+
+        assertThat(unzip(pkg).get("spj.cpp")).isEqualTo(checker);
+        mvc.perform(multipart("/api/v1/problems/import")
+                        .file(new MockMultipartFile("file", slug + ".zip", "application/zip", pkg))
+                        .param("slugOverride", copy)
+                        .with(admin("problem:create")))
+                .andExpect(status().isCreated());
+        assertThat(unzip(export(copy)).get("spj.cpp")).isEqualTo(checker);
     }
 
     @Test
@@ -339,11 +363,12 @@ class ProblemPackageRoundTripTest extends PackagingPostgresTest {
         String slug = newSlug("rt");
         seed(slug);
         checkers.upload(slug, new MockMultipartFile("file", "spj.cpp", "text/x-c++src", utf8(CHECKER)));
-        sources.files.remove(slug + "/spj.cpp");
+        String key = slug + "/spj-" + sha256(utf8(CHECKER)) + ".cpp";
+        sources.files.remove(key);
 
         assertThatThrownBy(() -> packages.plan(slug))
                 .isInstanceOf(TestCaseBundleException.class)
-                .hasMessageContaining(slug + "/spj.cpp");
+                .hasMessageContaining(key);
         mvc.perform(get(EXPORT, slug).with(admin("problem:update")))
                 .andExpect(request().asyncNotStarted())
                 .andExpect(status().isInternalServerError());

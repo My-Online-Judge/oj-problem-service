@@ -9,6 +9,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.io.ByteArrayOutputStream;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -80,6 +82,23 @@ class ProblemPackageImportTest extends PackagingPostgresTest {
                 .andExpect(jsonPath("$.message").value("A checker must be UTF-8 text"));
         assertThat(problemCount(slug)).isZero();
         assertThat(sources.files).isEmpty();
+    }
+
+    /** An imported checker is stored under its version, {@code <slug>/spj-<sha256 hex>.cpp}; no legacy key is written. */
+    @Test
+    void importStoresTheVersionedKey() throws Exception {
+        String slug = newSlug("imp");
+        byte[] checker = utf8("int main() { return 0; }\n");
+        Map<String, byte[]> entries = entries(problemJson(slug));
+        entries.put("spj.cpp", checker);
+
+        importZip(zip(entries)).andExpect(status().isCreated());
+
+        String version = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(checker));
+        assertThat(sources.files.get(slug + "/spj-" + version + ".cpp")).isEqualTo(checker);
+        assertThat(sources.files).doesNotContainKey(slug + "/spj.cpp");
+        assertThat(jdbc.queryForObject("SELECT spj_version FROM t_problems WHERE problem_slug = ?", String.class, slug))
+                .isEqualTo(version);
     }
 
     @Test
