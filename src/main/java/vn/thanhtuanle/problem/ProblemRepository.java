@@ -57,14 +57,21 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
     List<String> findActiveSlugsIn(@Param("slugs") Collection<String> slugs);
 
     /**
-     * The WHERE of {@link #findProblemsWithStats}, shared by the page query and its count so they cannot drift.
-     * The search matches the title, the description or the slug (slugs are public). Status 2 = DELETED (never listed); status 1 = ACTIVE, the only status a caller without
-     * {@code includeInactive} may see.
+     * {@code '%' || :search || '%'} with {@code \}, {@code %} and {@code _} in the search escaped (the escape
+     * character is {@code \}), so that the search is matched as literal text.
      */
-    String PROBLEM_FILTER = """
-            WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
-                   OR p.description ILIKE CONCAT('%', :search, '%')
-                   OR p.problem_slug ILIKE CONCAT('%', :search, '%'))
+    String SEARCH_PATTERN = "CONCAT('%', replace(replace(replace(:search, '\\', '\\\\'), '%', '\\%'), '_', '\\_'), '%')";
+
+    /**
+     * The WHERE of {@link #findProblemsWithStats}, shared by the page query and its count so they cannot drift.
+     * The search matches the title, the description or the slug (slugs are public), as literal text: {@code %} and
+     * {@code _} in it are not wildcards. Status 2 = DELETED (never listed); status 1 = ACTIVE, the only status a
+     * caller without {@code includeInactive} may see.
+     */
+    String PROBLEM_FILTER = "WHERE (:search IS NULL OR p.title ILIKE " + SEARCH_PATTERN + " ESCAPE '\\'\n"
+            + "       OR p.description ILIKE " + SEARCH_PATTERN + " ESCAPE '\\'\n"
+            + "       OR p.problem_slug ILIKE " + SEARCH_PATTERN + " ESCAPE '\\')\n"
+            + """
               AND (:status IS NULL OR p.status = :status)
               AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
               AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))

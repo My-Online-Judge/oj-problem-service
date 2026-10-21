@@ -48,6 +48,26 @@ class ProblemSearchTest extends PostgresTest {
                 .containsExactly("title-match-x");
     }
 
+    /** % and _ in the search are literal text, not LIKE wildcards: "sum_of" does not find "sum-of-two". */
+    @Test
+    void wildcardsInTheSearchAreLiteral() {
+        String marker = "wild" + UUID.randomUUID().toString().substring(0, 8);
+        save(marker + "-sum-of-two", "plain", ProblemStatus.ACTIVE);
+        save(marker + "-sum_of_one", "plain", ProblemStatus.ACTIVE);
+        save(marker + "-half", "100% sure", ProblemStatus.ACTIVE);
+        save(marker + "-back", "a\\b", ProblemStatus.ACTIVE);
+
+        assertThat(search("sum_of", 10, false).getData()).extracting(ProblemResponseDto::getProblemSlug)
+                .containsExactly(marker + "-sum_of_one");
+        assertThat(search(marker + "-sum_of", 10, false).getTotalElements()).isEqualTo(1);
+        assertThat(search("%", 10, false).getData()).extracting(ProblemResponseDto::getProblemSlug)
+                .containsExactly(marker + "-half");
+        assertThat(search("_", 10, false).getData()).extracting(ProblemResponseDto::getProblemSlug)
+                .containsExactly(marker + "-sum_of_one");
+        assertThat(search("a\\b", 10, false).getData()).extracting(ProblemResponseDto::getProblemSlug)
+                .containsExactly(marker + "-back");
+    }
+
     @Test
     void theCountMatchesThePage() {
         String marker = "cnt" + UUID.randomUUID().toString().substring(0, 8);
