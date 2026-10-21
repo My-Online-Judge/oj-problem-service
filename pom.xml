@@ -175,7 +175,7 @@
 		<dependency>
 			<groupId>io.minio</groupId>
 			<artifactId>minio</artifactId>
-			<version>8.5.17</version>
+			<version>9.0.3</version>
 		</dependency>
 		<!-- Kafka: verdict events for the statistics -->
 		<dependency>
