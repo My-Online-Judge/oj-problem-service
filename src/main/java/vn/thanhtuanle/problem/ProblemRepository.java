@@ -58,12 +58,13 @@ public interface ProblemRepository extends JpaRepository<Problem, UUID>, JpaSpec
 
     /**
      * The WHERE of {@link #findProblemsWithStats}, shared by the page query and its count so they cannot drift.
-     * Status 2 = DELETED (never listed); status 1 = ACTIVE, the only status a caller without
+     * The search matches the title, the description or the slug (slugs are public). Status 2 = DELETED (never listed); status 1 = ACTIVE, the only status a caller without
      * {@code includeInactive} may see.
      */
     String PROBLEM_FILTER = """
             WHERE (:search IS NULL OR p.title ILIKE CONCAT('%', :search, '%')
-                   OR p.description ILIKE CONCAT('%', :search, '%'))
+                   OR p.description ILIKE CONCAT('%', :search, '%')
+                   OR p.problem_slug ILIKE CONCAT('%', :search, '%'))
               AND (:status IS NULL OR p.status = :status)
               AND (:hardnessLevel IS NULL OR p.hardness_level = :hardnessLevel)
               AND (:tag IS NULL OR EXISTS (SELECT 1 FROM t_problem_tags t WHERE t.problem_id = p.id AND t.tag = :tag))
