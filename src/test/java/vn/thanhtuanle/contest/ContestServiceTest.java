@@ -898,4 +898,38 @@ class ContestServiceTest extends PostgresTest {
                 + "WHERE table_name = 't_contests' AND column_name = 'enrollment'", String.class))
                 .contains("OPEN");
     }
+
+    @Test
+    void aRunningRequiredContestHidesItsProblemsFromStrangers() {
+        String slug = slug("hidden");
+        String p = problem();
+        contests.create(required(slug, p), true);
+        UUID enrolled = UUID.randomUUID();
+        jdbc.update("INSERT INTO t_contest_enrollments (contest_id, user_id, enrolled_at) VALUES (?, ?, now())",
+                contestId(slug), enrolled);
+        persisted();
+        clock.set(T.plusSeconds(1));
+        UUID stranger = UUID.randomUUID();
+
+        assertThat(contests.detail(slug, false, false, Optional.of(stranger)).problems()).isEmpty();
+        assertThat(contests.detail(slug, false, false, Optional.empty()).problems()).isEmpty();
+        assertThat(contests.detail(slug, false, false, Optional.of(enrolled)).problems()).hasSize(1);
+        assertThat(contests.detail(slug, true, true, Optional.empty()).problems()).hasSize(1);
+        assertThatThrownBy(() -> contests.problem(slug, "A", false, Optional.of(stranger)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(contests.problem(slug, "A", false, Optional.of(enrolled)).getProblemSlug()).isEqualTo(p);
+    }
+
+    @Test
+    void anEndedRequiredContestIsAnArchiveForEveryone() {
+        String slug = slug("archive");
+        String p = problem();
+        contests.create(required(slug, p), true);
+        persisted();
+        clock.set(T.plus(LENGTH));
+        UUID stranger = UUID.randomUUID();
+
+        assertThat(contests.detail(slug, false, false, Optional.of(stranger)).problems()).hasSize(1);
+        assertThat(contests.problem(slug, "A", false, Optional.of(stranger)).getProblemSlug()).isEqualTo(p);
+    }
 }

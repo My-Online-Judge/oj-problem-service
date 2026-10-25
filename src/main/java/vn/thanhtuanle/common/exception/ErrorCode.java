@@ -12,6 +12,9 @@ public enum ErrorCode implements ErrorCodeSpec {
     CONTEST_HAS_SCORES("This contest has scores: its start time is locked", HttpStatus.CONFLICT),
     /** Without problem:update: a contest holding INACTIVE problems decides when they go public, so it is not moved. */
     CONTEST_HOLDS_INACTIVE_PROBLEMS("This contest holds problems that are not public yet: only a problem editor can publish it or move its start earlier", HttpStatus.FORBIDDEN),
+    // Registration (contest enrollment design §4.3).
+    ENROLLMENT_NOT_REQUIRED("This contest is open to everyone", HttpStatus.CONFLICT),
+    ENROLLMENT_CLOSED("Registration for this contest is closed", HttpStatus.CONFLICT),
     UNCATEGORIZED_EXCEPTION("Uncategorized error", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String message;

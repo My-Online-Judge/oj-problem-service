@@ -40,6 +40,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import vn.thanhtuanle.contest.enrollment.EnrollmentRepository;
+import vn.thanhtuanle.contest.enrollment.EnrollmentService;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -67,6 +68,7 @@ public class ContestService {
     private final ContestProblemRepository contestProblems;
     private final ContestScoreRepository scores;
     private final EnrollmentRepository enrollments;
+    private final EnrollmentService enrollmentService;
     private final ProblemRepository problems;
     private final ProblemService problemService;
     private final Clock clock;
@@ -227,8 +229,20 @@ public class ContestService {
      */
     @Transactional(readOnly = true)
     public ProblemResponseDto problem(String slug, String label, boolean editor) {
+        return problem(slug, label, editor, Optional.empty());
+    }
+
+    /**
+     * As {@link #problem(String, String, boolean)}, for a viewer: while a REQUIRED contest runs, only registered users
+     * (and editors) may open its problems — a stranger gets the 404 an upcoming contest gives (design §4.2).
+     */
+    @Transactional(readOnly = true)
+    public ProblemResponseDto problem(String slug, String label, boolean editor, Optional<UUID> viewer) {
         Contest contest = visible(slug, editor);
         if (!editor && phase(contest, clock.instant()) == ContestPhase.UPCOMING) {
+            throw notFound(slug);
+        }
+        if (!editor && !enrollmentService.maySeeProblems(contest, viewer, false)) {
             throw notFound(slug);
         }
         ContestProblem cp = contest.getProblems().stream()
@@ -406,7 +420,8 @@ public class ContestService {
     private ContestDetail toDetail(Contest contest, boolean editor, boolean early, Optional<UUID> viewer) {
         Instant now = clock.instant();
         ContestPhase phase = phase(contest, now);
-        boolean open = contest.getStatus() == ContestStatus.PUBLISHED && phase != ContestPhase.UPCOMING;
+        boolean open = contest.getStatus() == ContestStatus.PUBLISHED && phase != ContestPhase.UPCOMING
+                && enrollmentService.maySeeProblems(contest, viewer, editor);
         List<ContestProblem> shown = (early || open ? ordered(contest) : List.<ContestProblem>of()).stream()
                 .filter(cp -> editor || cp.getProblem().getStatus() != ProblemStatus.DELETED.getValue())
                 .toList();

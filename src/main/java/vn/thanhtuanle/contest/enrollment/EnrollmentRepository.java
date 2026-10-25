@@ -40,7 +40,14 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Enrollme
 
     Page<Enrollment> findByKeyContestIdOrderByEnrolledAtDesc(UUID contestId, Pageable pageable);
 
-    @Modifying
+    /** The whole list, newest first (a search spans it). */
+    List<Enrollment> findByKeyContestIdOrderByEnrolledAtDesc(UUID contestId);
+
+    /**
+     * A bulk delete bypasses the persistence context: it is flushed first and cleared after, so a registration row
+     * deleted here is not kept as a managed instance that a later register (a merge) would silently update.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM Enrollment e WHERE e.key.contestId = :contestId AND e.key.userId = :userId")
     int deleteByContestAndUser(@Param("contestId") UUID contestId, @Param("userId") UUID userId);
 }
