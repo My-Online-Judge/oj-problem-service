@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import vn.thanhtuanle.contest.enrollment.EnrollmentRepository;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -65,6 +66,7 @@ public class ContestService {
     private final ContestRepository contests;
     private final ContestProblemRepository contestProblems;
     private final ContestScoreRepository scores;
+    private final EnrollmentRepository enrollments;
     private final ProblemRepository problems;
     private final ProblemService problemService;
     private final Clock clock;
@@ -75,23 +77,32 @@ public class ContestService {
      */
     @Transactional(readOnly = true)
     public ContestListResponse list(boolean editor) {
+        return list(editor, Optional.empty());
+    }
+
+    /** As {@link #list(boolean)}, with each contest's registration count and whether {@code viewer} registered. */
+    @Transactional(readOnly = true)
+    public ContestListResponse list(boolean editor, Optional<UUID> viewer) {
         Instant now = clock.instant();
         List<ContestStatus> statuses = editor
                 ? List.of(ContestStatus.DRAFT, ContestStatus.PUBLISHED)
                 : List.of(ContestStatus.PUBLISHED);
         List<Contest> notEnded = contests.findNotEndedAt(statuses, now, PageRequest.of(0, NOT_ENDED_LIMIT));
         List<Contest> past = contests.findEndedAt(statuses, now, PageRequest.of(0, PAST_LIMIT));
-        Map<UUID, Integer> counts = problemCounts(Stream.concat(notEnded.stream(), past.stream()).toList());
+        List<Contest> listed = Stream.concat(notEnded.stream(), past.stream()).toList();
+        Map<UUID, Integer> counts = problemCounts(listed);
+        Registrations registrations = registrations(listed, viewer);
 
         List<ContestSummary> running = notEnded.stream()
                 .filter(c -> phase(c, now) == ContestPhase.RUNNING)
                 .sorted(Comparator.comparing(Contest::getEndsAt).thenComparing(Contest::getSlug))
-                .map(c -> summary(c, now, counts)).toList();
+                .map(c -> summary(c, now, counts, registrations)).toList();
         List<ContestSummary> upcoming = notEnded.stream()
                 .filter(c -> phase(c, now) == ContestPhase.UPCOMING)
                 .sorted(Comparator.comparing(Contest::getStartsAt).thenComparing(Contest::getSlug))
-                .map(c -> summary(c, now, counts)).toList();
-        return new ContestListResponse(running, upcoming, past.stream().map(c -> summary(c, now, counts)).toList(), now);
+                .map(c -> summary(c, now, counts, registrations)).toList();
+        return new ContestListResponse(running, upcoming,
+                past.stream().map(c -> summary(c, now, counts, registrations)).toList(), now);
     }
 
     /**
@@ -105,7 +116,8 @@ public class ContestService {
                 Sort.by(Sort.Direction.DESC, "startsAt").and(Sort.by(Sort.Direction.ASC, "slug")));
         Page<Contest> found = contests.findAll(ContestSpecifications.matching(q), request);
         Map<UUID, Integer> counts = problemCounts(found.getContent());
-        return PageResponse.of(found.map(c -> summary(c, now, counts)));
+        Registrations registrations = registrations(found.getContent(), Optional.empty());
+        return PageResponse.of(found.map(c -> summary(c, now, counts, registrations)));
     }
 
     /**
@@ -141,6 +153,7 @@ public class ContestService {
                 .startsAt(startsAt)
                 .endsAt(endsAt)
                 .status(r.status())
+                .enrollment(r.enrollment() == null ? ContestEnrollment.OPEN : r.enrollment())
                 .build();
         setProblems(contest, chosen);
         claimSlug(contest);
@@ -162,7 +175,9 @@ public class ContestService {
         Instant endsAt = seconds(r.endsAt());
         boolean problemsChange = r.problemSlugs() != null && !slugsOf(contest).equals(r.problemSlugs());
         boolean startChanges = !seconds(contest.getStartsAt()).equals(startsAt);
-        if (started(contest) && (problemsChange || startChanges)) {
+        // The kind too: switching to REQUIRED mid-contest would lock out its contestants (design §4.2).
+        boolean kindChanges = r.enrollment() != null && r.enrollment() != contest.getEnrollment();
+        if (started(contest) && (problemsChange || startChanges || kindChanges)) {
             throw new AppException(ErrorCode.CONTEST_STARTED);
         }
         // Under the contest's row lock, which score writes take too (lockContest): no score appears meanwhile.
@@ -183,6 +198,9 @@ public class ContestService {
         contest.setStartsAt(startsAt);
         contest.setEndsAt(endsAt);
         contest.setStatus(r.status());
+        if (r.enrollment() != null) {
+            contest.setEnrollment(r.enrollment());
+        }
         if (chosen != null) {
             contest.getProblems().clear();
             contests.flush(); // the old rows go first: (contest, label) and (contest, problem) are unique
@@ -351,9 +369,34 @@ public class ContestService {
                         c -> (int) c.getProblems()));
     }
 
-    private static ContestSummary summary(Contest c, Instant now, Map<UUID, Integer> counts) {
+    private static ContestSummary summary(Contest c, Instant now, Map<UUID, Integer> counts,
+            Registrations registrations) {
         return new ContestSummary(c.getSlug(), c.getTitle(), c.getStartsAt(), c.getEndsAt(), c.getStatus(),
-                phase(c, now), counts.getOrDefault(c.getId(), 0));
+                phase(c, now), counts.getOrDefault(c.getId(), 0), c.getEnrollment(),
+                registrations.count(c.getId()), registrations.enrolled(c.getId()));
+    }
+
+    /** Registration counts of some contests, and which of them a viewer registered for (one query each). */
+    record Registrations(Map<UUID, Integer> counts, Set<UUID> viewerIn) {
+        int count(UUID contestId) {
+            return counts.getOrDefault(contestId, 0);
+        }
+
+        boolean enrolled(UUID contestId) {
+            return viewerIn.contains(contestId);
+        }
+    }
+
+    private Registrations registrations(List<Contest> listed, Optional<UUID> viewer) {
+        if (listed.isEmpty()) {
+            return new Registrations(Map.of(), Set.of());
+        }
+        List<UUID> ids = listed.stream().map(Contest::getId).toList();
+        Map<UUID, Integer> counts = enrollments.countByContestIds(ids).stream()
+                .collect(Collectors.toMap(EnrollmentRepository.EnrollmentCount::getContestId,
+                        c -> (int) c.getEnrolled()));
+        Set<UUID> viewerIn = viewer.map(u -> enrollments.contestIdsOf(u, ids)).orElse(Set.of());
+        return new Registrations(counts, viewerIn);
     }
 
     /**
@@ -374,8 +417,10 @@ public class ContestService {
         Map<String, ProblemProgress> progress = viewer
                 .map(userId -> progress(contest, shown, userId))
                 .orElse(Map.of());
+        Registrations registrations = registrations(List.of(contest), viewer);
         return new ContestDetail(contest.getSlug(), contest.getTitle(), contest.getDescription(), contest.getStartsAt(),
-                contest.getEndsAt(), contest.getStatus(), phase, views, progress, now);
+                contest.getEndsAt(), contest.getStatus(), phase, views, progress, now, contest.getEnrollment(),
+                registrations.count(contest.getId()), registrations.enrolled(contest.getId()));
     }
 
     /** The viewer's score rows by label, for the problems shown. */

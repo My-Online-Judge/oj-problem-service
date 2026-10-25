@@ -90,7 +90,8 @@ class ScoreboardServiceTest extends PostgresTest {
     }
 
     private static ContestRequest request(String slug, ContestStatus status, List<String> problemSlugs) {
-        return new ContestRequest(slug, "Contest " + slug, null, T, T.plus(Duration.ofHours(3)), status, problemSlugs);
+        return new ContestRequest(slug, "Contest " + slug, null, T, T.plus(Duration.ofHours(3)), status, problemSlugs,
+                ContestEnrollment.OPEN);
     }
 
     /** A contest from T to T + 3h, created before its start; returns its slug. */

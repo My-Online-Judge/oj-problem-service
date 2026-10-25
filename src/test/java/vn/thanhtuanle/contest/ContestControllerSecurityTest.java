@@ -85,18 +85,19 @@ class ContestControllerSecurityTest {
     private static String body(String slug) {
         return """
                 {"slug": "%s", "title": "Spring cup", "startsAt": "2026-10-21T02:00:00Z",
-                 "endsAt": "2026-10-21T05:00:00Z", "status": "PUBLISHED", "problemSlugs": ["a-plus-b"]}""".formatted(slug);
+                 "endsAt": "2026-10-21T05:00:00Z", "status": "PUBLISHED", "problemSlugs": ["a-plus-b"],
+                 "enrollment": "OPEN"}""".formatted(slug);
     }
 
     private static ContestDetail detail(String slug) {
         return new ContestDetail(slug, "Spring cup", null, START, START.plusSeconds(3 * 3600), ContestStatus.PUBLISHED,
-                ContestPhase.RUNNING, List.of(), Map.of(), NOW);
+                ContestPhase.RUNNING, List.of(), Map.of(), NOW, ContestEnrollment.OPEN, 0, false);
     }
 
     private static PageResponse<ContestSummary> page(String slug) {
         return PageResponse.<ContestSummary>builder()
                 .data(List.of(new ContestSummary(slug, "Spring cup", START, START.plusSeconds(3 * 3600),
-                        ContestStatus.DRAFT, ContestPhase.UPCOMING, 2)))
+                        ContestStatus.DRAFT, ContestPhase.UPCOMING, 2, ContestEnrollment.OPEN, 0, false)))
                 .page(0).size(20).totalElements(1).totalPages(1).hasPrev(false).hasNext(false).build();
     }
 

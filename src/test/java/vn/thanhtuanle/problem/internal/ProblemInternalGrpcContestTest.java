@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.contest.ContestRepository;
 import vn.thanhtuanle.contest.ContestService;
+import vn.thanhtuanle.contest.ContestEnrollment;
 import vn.thanhtuanle.contest.ContestStatus;
 import vn.thanhtuanle.contest.dto.ContestRequest;
 import vn.thanhtuanle.entity.Problem;
@@ -100,7 +101,8 @@ class ProblemInternalGrpcContestTest {
     /** A contest from T to T + 3h holding these problems. */
     private String contest(ContestStatus status, String... problemSlugs) {
         String slug = "c-grpc-" + UUID.randomUUID().toString().substring(0, 8);
-        contestService.create(new ContestRequest(slug, "Contest " + slug, null, T, END, status, List.of(problemSlugs)), true);
+        contestService.create(new ContestRequest(slug, "Contest " + slug, null, T, END, status, List.of(problemSlugs),
+                ContestEnrollment.OPEN), true);
         return slug;
     }
 

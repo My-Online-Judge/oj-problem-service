@@ -1,5 +1,6 @@
 package vn.thanhtuanle.contest.dto;
 
+import vn.thanhtuanle.contest.ContestEnrollment;
 import vn.thanhtuanle.contest.ContestPhase;
 import vn.thanhtuanle.contest.ContestStatus;
 
@@ -14,5 +15,6 @@ import java.util.Map;
  */
 public record ContestDetail(String slug, String title, String description, Instant startsAt, Instant endsAt,
         ContestStatus status, ContestPhase phase, List<ContestProblemView> problems,
-        Map<String, ProblemProgress> myProgress, Instant serverTime) {
+        Map<String, ProblemProgress> myProgress, Instant serverTime, ContestEnrollment enrollment, int enrolledCount,
+        boolean enrolled) {
 }

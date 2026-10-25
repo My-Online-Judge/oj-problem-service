@@ -95,7 +95,18 @@ class ContestServiceTest extends PostgresTest {
 
     private static ContestRequest request(String slug, Instant startsAt, Instant endsAt, ContestStatus status,
             List<String> problemSlugs) {
-        return new ContestRequest(slug, "Contest " + slug, "About " + slug, startsAt, endsAt, status, problemSlugs);
+        return new ContestRequest(slug, "Contest " + slug, "About " + slug, startsAt, endsAt, status, problemSlugs,
+                ContestEnrollment.OPEN);
+    }
+
+    /** A PUBLISHED contest from T to T + 3h that requires registration. */
+    private static ContestRequest required(String slug, String... problemSlugs) {
+        return withEnrollment(published(slug, problemSlugs), ContestEnrollment.REQUIRED);
+    }
+
+    private static ContestRequest withEnrollment(ContestRequest r, ContestEnrollment enrollment) {
+        return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), r.status(),
+                r.problemSlugs(), enrollment);
     }
 
     /** A PUBLISHED contest from T to T + 3h. */
@@ -104,21 +115,24 @@ class ContestServiceTest extends PostgresTest {
     }
 
     private static ContestRequest withStatus(ContestRequest r, ContestStatus status) {
-        return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), status, r.problemSlugs());
+        return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), status, r.problemSlugs(),
+                r.enrollment());
     }
 
     private static ContestRequest withStart(ContestRequest r, Instant startsAt) {
-        return new ContestRequest(r.slug(), r.title(), r.description(), startsAt, r.endsAt(), r.status(), r.problemSlugs());
+        return new ContestRequest(r.slug(), r.title(), r.description(), startsAt, r.endsAt(), r.status(), r.problemSlugs(),
+                r.enrollment());
     }
 
     /** The same request without a problem list, which keeps the contest's list. */
     private static ContestRequest withoutProblems(ContestRequest r) {
-        return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), r.status(), null);
+        return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), r.status(), null,
+                r.enrollment());
     }
 
     private static ContestRequest withProblems(ContestRequest r, String... problemSlugs) {
         return new ContestRequest(r.slug(), r.title(), r.description(), r.startsAt(), r.endsAt(), r.status(),
-                List.of(problemSlugs));
+                List.of(problemSlugs), r.enrollment());
     }
 
     /** Writes what is pending and forgets every loaded entity, so that what follows reads the database. */
@@ -427,7 +441,7 @@ class ContestServiceTest extends PostgresTest {
         persisted();
 
         ContestRequest retitled = new ContestRequest(null, "Retitled", original.description(), original.startsAt(),
-                original.endsAt(), original.status(), null);
+                original.endsAt(), original.status(), null, null);
         assertThat(contests.update(slug, retitled, false).title()).isEqualTo("Retitled");
         persisted();
 
@@ -622,7 +636,7 @@ class ContestServiceTest extends PostgresTest {
         clock.set(T);
 
         ContestRequest allowed = new ContestRequest(null, "New title", "New description", T, T.plus(Duration.ofHours(4)),
-                ContestStatus.PUBLISHED, List.of(p1));
+                ContestStatus.PUBLISHED, List.of(p1), null);
         ContestDetail updated = contests.update(slug, allowed, true);
 
         assertThat(updated.title()).isEqualTo("New title");
@@ -673,7 +687,7 @@ class ContestServiceTest extends PostgresTest {
         clock.set(T.plus(Duration.ofHours(1)));
 
         ContestRequest retitled = new ContestRequest(null, "Retitled", null, sentStart, sent.endsAt(),
-                ContestStatus.PUBLISHED, List.of(p));
+                ContestStatus.PUBLISHED, List.of(p), null);
         assertThat(contests.update(slug, retitled, true).title()).isEqualTo("Retitled");
         persisted();
         assertThat(contests.update(slug, withStart(retitled, created.startsAt()), true).startsAt()).isEqualTo(T);
@@ -747,7 +761,7 @@ class ContestServiceTest extends PostgresTest {
         // everything else may still change, the problems of a DRAFT included
         String other = problem();
         ContestDetail changed = contests.update(slug, new ContestRequest(null, "Renamed", null, T,
-                T.plus(Duration.ofHours(5)), ContestStatus.DRAFT, List.of(other)), true);
+                T.plus(Duration.ofHours(5)), ContestStatus.DRAFT, List.of(other), null), true);
         assertThat(changed.title()).isEqualTo("Renamed");
         assertThat(changed.problems()).extracting(ContestProblemView::problemSlug).containsExactly(other);
     }
@@ -802,5 +816,86 @@ class ContestServiceTest extends PostgresTest {
         persisted();
 
         assertThat(rowsOf(id)).containsExactly(0, 0, 0);
+    }
+
+    // ---- registration kind (contest enrollment design §4) --------------------------------------------------------
+
+    @Test
+    void aContestIsOpenUnlessCreatedAsRequired() {
+        ContestDetail open = contests.create(published(slug("open"), problem()), true);
+        ContestDetail required = contests.create(required(slug("req"), problem()), true);
+
+        assertThat(open.enrollment()).isEqualTo(ContestEnrollment.OPEN);
+        assertThat(required.enrollment()).isEqualTo(ContestEnrollment.REQUIRED);
+        assertThat(required.enrolledCount()).isZero();
+        assertThat(required.enrolled()).isFalse();
+    }
+
+    @Test
+    void theKindShowsInTheListAndCountsRegistrations() {
+        String slug = slug("count");
+        contests.create(required(slug, problem()), true);
+        UUID alice = UUID.randomUUID();
+        UUID bob = UUID.randomUUID();
+        for (UUID u : List.of(alice, bob)) {
+            jdbc.update("INSERT INTO t_contest_enrollments (contest_id, user_id, enrolled_at) VALUES (?, ?, now())",
+                    contestId(slug), u);
+        }
+        persisted();
+
+        ContestSummary forAlice = contests.list(false, Optional.of(alice)).upcoming().stream()
+                .filter(c -> c.slug().equals(slug)).findFirst().orElseThrow();
+        ContestSummary forStranger = contests.list(false, Optional.of(UUID.randomUUID())).upcoming().stream()
+                .filter(c -> c.slug().equals(slug)).findFirst().orElseThrow();
+        ContestSummary anonymous = contests.list(false, Optional.empty()).upcoming().stream()
+                .filter(c -> c.slug().equals(slug)).findFirst().orElseThrow();
+
+        assertThat(forAlice.enrollment()).isEqualTo(ContestEnrollment.REQUIRED);
+        assertThat(forAlice.enrolledCount()).isEqualTo(2);
+        assertThat(forAlice.enrolled()).isTrue();
+        assertThat(forStranger.enrolled()).isFalse();
+        assertThat(anonymous.enrolled()).isFalse();
+        assertThat(contests.detail(slug, false, false, Optional.of(bob)).enrolled()).isTrue();
+        assertThat(contests.detail(slug, false, false, Optional.of(bob)).enrolledCount()).isEqualTo(2);
+    }
+
+    @Test
+    void theKindCannotChangeOnceStarted() {
+        String slug = slug("locked");
+        ContestRequest r = required(slug, problem());
+        contests.create(r, true);
+        persisted();
+        clock.set(T.plusSeconds(1));
+
+        assertThatThrownBy(() -> contests.update(slug, withEnrollment(r, ContestEnrollment.OPEN), true))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode()).isEqualTo(ErrorCode.CONTEST_STARTED);
+        // Left out, the kind stays as it is (an admin editing the title after the start).
+        assertThat(contests.update(slug, withEnrollment(withoutProblems(r), null), true).enrollment())
+                .isEqualTo(ContestEnrollment.REQUIRED);
+    }
+
+    @Test
+    void theKindMayChangeWhileUpcoming() {
+        String slug = slug("flip");
+        ContestRequest r = required(slug, problem());
+        contests.create(r, true);
+        persisted();
+
+        assertThat(contests.update(slug, withEnrollment(r, ContestEnrollment.OPEN), true).enrollment())
+                .isEqualTo(ContestEnrollment.OPEN);
+    }
+
+    @Test
+    void theMigrationDefaultsExistingContestsToOpen() {
+        String slug = slug("default");
+        contests.create(published(slug, problem()), true);
+        persisted();
+
+        assertThat(jdbc.queryForObject("SELECT enrollment FROM t_contests WHERE slug = ?", String.class, slug))
+                .isEqualTo("OPEN");
+        assertThat(jdbc.queryForObject("SELECT column_default FROM information_schema.columns "
+                + "WHERE table_name = 't_contests' AND column_name = 'enrollment'", String.class))
+                .contains("OPEN");
     }
 }

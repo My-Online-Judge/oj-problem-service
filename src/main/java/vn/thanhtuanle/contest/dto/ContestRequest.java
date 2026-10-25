@@ -1,5 +1,6 @@
 package vn.thanhtuanle.contest.dto;
 
+import vn.thanhtuanle.contest.ContestEnrollment;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -29,7 +30,10 @@ public record ContestRequest(
         @NotNull(message = "Status is required") ContestStatus status,
         @NotNull(groups = OnCreate.class, message = "Problems are required")
         @Size(min = 1, max = 26, message = "A contest has 1 to 26 problems")
-        List<String> problemSlugs) {
+        List<String> problemSlugs,
+        /** Who may take part (contest enrollment design §4): required on create; left out on update, the kind stays. */
+        @NotNull(groups = OnCreate.class, message = "Registration kind is required")
+        ContestEnrollment enrollment) {
 
     /** The rules that apply on create only. */
     public interface OnCreate {

@@ -48,6 +48,12 @@ public class Contest extends BaseEntity {
     @Column(nullable = false, length = 16)
     private ContestStatus status;
 
+    /** Who may take part while it runs (V9): OPEN for every contest from before registration existed. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private ContestEnrollment enrollment = ContestEnrollment.OPEN;
+
     /** In contest order: label A at position 0, B at 1, and so on. */
     @OneToMany(mappedBy = "contest", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position")

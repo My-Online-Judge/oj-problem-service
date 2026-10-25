@@ -59,7 +59,7 @@ class ContestConcurrencyTest extends PostgresTest {
 
     private static ContestRequest request(String slug, Instant start, ContestStatus status, String problem) {
         return new ContestRequest(slug, "Contest " + slug, null, start, start.plus(Duration.ofHours(3)), status,
-                List.of(problem));
+                List.of(problem), ContestEnrollment.OPEN);
     }
 
     /** A DRAFT contest that started an hour ago, holding {@code problem}. */
@@ -124,7 +124,7 @@ class ContestConcurrencyTest extends PostgresTest {
 
         long started = System.nanoTime();
         assertThatThrownBy(() -> contests.create(new ContestRequest(slug, "loser", null, start,
-                start.plus(Duration.ofHours(3)), ContestStatus.PUBLISHED, List.of(problem)), true))
+                start.plus(Duration.ofHours(3)), ContestStatus.PUBLISHED, List.of(problem), ContestEnrollment.OPEN), true))
                 .isInstanceOf(ResourceAlreadyExistException.class)
                 .hasMessage("Contest slug already exists: " + slug);
         winner.join();

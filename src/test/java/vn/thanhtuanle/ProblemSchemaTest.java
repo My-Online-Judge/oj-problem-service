@@ -26,7 +26,7 @@ class ProblemSchemaTest extends PostgresTest {
     @Test
     void flywayBuildsTheWholeSchemaAndSeedsNothing() throws Exception {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
         // The shared database already holds what other test classes wrote, in whatever order they ran: whether the
         // migrations seed anything is read from a database of their own.
         String url = freshDatabase("seed");
