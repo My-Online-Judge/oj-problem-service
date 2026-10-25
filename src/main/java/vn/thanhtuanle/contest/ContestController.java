@@ -24,6 +24,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import vn.thanhtuanle.common.constant.Routes;
 import vn.thanhtuanle.common.security.Authorities;
+import vn.thanhtuanle.contest.enrollment.EnrollmentService;
+import vn.thanhtuanle.contest.dto.EnrollmentRow;
+import vn.thanhtuanle.contest.dto.EnrollmentState;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
 import vn.thanhtuanle.contest.dto.ContestRequest;
@@ -50,11 +53,12 @@ public class ContestController {
 
     private final ContestService contests;
     private final ScoreboardService scoreboards;
+    private final EnrollmentService enrollments;
 
     @GetMapping
     @Operation(summary = "Contests by phase: running, upcoming, past")
     public ApiResponse<ContestListResponse> list() {
-        return ApiResponse.success(contests.list(editor()));
+        return ApiResponse.success(contests.list(editor(), viewer()));
     }
 
     @GetMapping("/all")
@@ -99,7 +103,40 @@ public class ContestController {
     @Operation(summary = "A contest's problem by label, once the contest has started")
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<ProblemResponseDto> problem(@PathVariable String slug, @PathVariable String label) {
-        return ApiResponse.success(contests.problem(slug, label, editor() && ProblemAccess.callerMayEdit()));
+        return ApiResponse.success(contests.problem(slug, label, editor() && ProblemAccess.callerMayEdit(), viewer()));
+    }
+
+    // ---- registration (contest enrollment design §4.3) ----------------------------------------------------------
+
+    @PostMapping("/{slug}/enroll")
+    @Operation(summary = "Register the caller for a contest that requires registration (idempotent)")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<EnrollmentState> enroll(@PathVariable String slug) {
+        return ApiResponse.success(enrollments.enroll(slug, viewer().orElseThrow(), editor()));
+    }
+
+    @DeleteMapping("/{slug}/enroll")
+    @Operation(summary = "Withdraw the caller's registration, before the start (idempotent)")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<EnrollmentState> withdraw(@PathVariable String slug) {
+        return ApiResponse.success(enrollments.withdraw(slug, viewer().orElseThrow(), editor()));
+    }
+
+    @GetMapping("/{slug}/enrollments")
+    @Operation(summary = "The registered users, newest first; q matches a username or name (contest managers)")
+    @PreAuthorize("hasAuthority('contest:update')")
+    public ApiResponse<List<EnrollmentRow>> participants(@PathVariable String slug,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String q) {
+        return ApiResponse.success(enrollments.participants(slug, page, size, q));
+    }
+
+    @DeleteMapping("/{slug}/enrollments/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Remove a registered user from a contest (contest managers)")
+    @PreAuthorize("hasAuthority('contest:update')")
+    public void removeParticipant(@PathVariable String slug, @PathVariable UUID userId) {
+        enrollments.remove(slug, userId);
     }
 
     @GetMapping("/{slug}/scoreboard")

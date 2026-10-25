@@ -227,6 +227,7 @@ public class ContestService {
      * contest is running or has ended, at any time for an {@code editor}, which here means a caller who is both an
      * editor and a problem editor. Otherwise a 404.
      */
+    /** Without a viewer: what an anonymous caller (or an editor) may read. */
     @Transactional(readOnly = true)
     public ProblemResponseDto problem(String slug, String label, boolean editor) {
         return problem(slug, label, editor, Optional.empty());

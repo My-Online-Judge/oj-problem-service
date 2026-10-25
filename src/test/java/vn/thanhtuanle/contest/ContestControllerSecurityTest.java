@@ -20,6 +20,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import vn.thanhtuanle.common.exception.ErrorCode;
 import vn.thanhtuanle.config.SecurityConfig;
+import vn.thanhtuanle.contest.enrollment.EnrollmentService;
+import vn.thanhtuanle.contest.dto.EnrollmentRow;
+import vn.thanhtuanle.contest.dto.EnrollmentState;
 import vn.thanhtuanle.contest.dto.ContestDetail;
 import vn.thanhtuanle.contest.dto.ContestListResponse;
 import vn.thanhtuanle.contest.dto.ContestRequest;
@@ -77,6 +80,8 @@ class ContestControllerSecurityTest {
     private ContestService contests;
     @MockitoBean
     private ScoreboardService scoreboards;
+    @MockitoBean
+    private EnrollmentService enrollments;
     @MockitoBean
     private JwtDecoder jwtDecoder;
     @MockitoBean
@@ -158,7 +163,7 @@ class ContestControllerSecurityTest {
 
     @Test
     void anonymousListIs200() throws Exception {
-        when(contests.list(false)).thenReturn(new ContestListResponse(List.of(), List.of(), List.of(), NOW));
+        when(contests.list(eq(false), any())).thenReturn(new ContestListResponse(List.of(), List.of(), List.of(), NOW));
 
         mockMvc.perform(get(CONTESTS))
                 .andExpect(status().isOk())
@@ -275,7 +280,7 @@ class ContestControllerSecurityTest {
     @Test
     @WithMockUser(authorities = {"contest:create", "contest:update", "contest:delete"})
     void aContestOnlyRoleReadsProblemsByThePublicRule() throws Exception {
-        when(contests.problem("spring-cup", "A", false))
+        when(contests.problem(eq("spring-cup"), eq("A"), eq(false), any()))
                 .thenThrow(new ResourceNotFoundException("Contest not found: spring-cup"));
         when(contests.detail("spring-cup", true, false, Optional.empty())).thenReturn(detail("spring-cup"));
         when(contests.create(any(), eq(false))).thenReturn(detail("spring-cup"));
@@ -288,7 +293,7 @@ class ContestControllerSecurityTest {
         mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
                 .andExpect(status().isOk());
 
-        verify(contests).problem("spring-cup", "A", false);
+        verify(contests).problem(eq("spring-cup"), eq("A"), eq(false), any());
         verify(contests).detail("spring-cup", true, false, Optional.empty());
         verify(contests).create(any(), eq(false));
         verify(contests).update(eq("spring-cup"), any(ContestRequest.class), eq(false));
@@ -297,7 +302,7 @@ class ContestControllerSecurityTest {
     @Test
     @WithMockUser(authorities = {"contest:update", "problem:update"})
     void aContestAndProblemEditorReadsEarly() throws Exception {
-        when(contests.problem("spring-cup", "A", true)).thenReturn(new ProblemResponseDto());
+        when(contests.problem(eq("spring-cup"), eq("A"), eq(true), any())).thenReturn(new ProblemResponseDto());
         when(contests.detail("spring-cup", true, true, Optional.empty())).thenReturn(detail("spring-cup"));
         when(contests.update(eq("spring-cup"), any(ContestRequest.class), eq(true))).thenReturn(detail("spring-cup"));
 
@@ -306,7 +311,7 @@ class ContestControllerSecurityTest {
         mockMvc.perform(put(CONTESTS + "/spring-cup").contentType(MediaType.APPLICATION_JSON).content(body("spring-cup")))
                 .andExpect(status().isOk());
 
-        verify(contests).problem("spring-cup", "A", true);
+        verify(contests).problem(eq("spring-cup"), eq("A"), eq(true), any());
         verify(contests).detail("spring-cup", true, true, Optional.empty());
         verify(contests).update(eq("spring-cup"), any(ContestRequest.class), eq(true));
     }
@@ -314,11 +319,11 @@ class ContestControllerSecurityTest {
     @Test
     @WithMockUser(authorities = "problem:update")
     void aProblemEditorWithoutContestUpdateIsNoContestEditor() throws Exception {
-        when(contests.problem("spring-cup", "A", false)).thenReturn(new ProblemResponseDto());
+        when(contests.problem(eq("spring-cup"), eq("A"), eq(false), any())).thenReturn(new ProblemResponseDto());
 
         mockMvc.perform(get(CONTESTS + "/spring-cup/problems/A")).andExpect(status().isOk());
 
-        verify(contests).problem("spring-cup", "A", false);
+        verify(contests).problem(eq("spring-cup"), eq("A"), eq(false), any());
     }
 
     @Test
@@ -429,5 +434,87 @@ class ContestControllerSecurityTest {
                 .andExpect(status().isOk());
 
         verify(contests).detail("spring-cup", true, false, Optional.of(uid));
+    }
+
+    // ---- registration endpoints (contest enrollment design §4.3) ----------------------------------------------------
+
+    /** A signed-in user's token: the decoder answers it, the request carries it as a bearer. */
+    private String bearer(UUID uid, String... authorities) {
+        String token = "user-" + uid;
+        when(jwtDecoder.decode(token)).thenReturn(Jwt.withTokenValue(token).header("alg", "RS256").subject("u")
+                .claim(OjJwtDecoders.UID_CLAIM, uid.toString())
+                .claim(OjJwtAuthenticationFilter.AUTHORITIES_CLAIM, List.of(authorities))
+                .build());
+        return "Bearer " + token;
+    }
+
+    @Test
+    void enrollIs401Anonymous() throws Exception {
+        mockMvc.perform(post(CONTESTS + "/spring-cup/enroll")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(enrollments);
+    }
+
+    @Test
+    void enrollAsAUserCallsTheServiceWithTheViewer() throws Exception {
+        UUID uid = UUID.randomUUID();
+        when(enrollments.enroll("spring-cup", uid, false)).thenReturn(new EnrollmentState(true, 3));
+
+        mockMvc.perform(post(CONTESTS + "/spring-cup/enroll").header("Authorization", bearer(uid)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enrolled").value(true))
+                .andExpect(jsonPath("$.data.enrolledCount").value(3));
+        verify(enrollments).enroll("spring-cup", uid, false);
+    }
+
+    @Test
+    void withdrawAsAUserAnswersTheState() throws Exception {
+        UUID uid = UUID.randomUUID();
+        when(enrollments.withdraw("spring-cup", uid, true)).thenReturn(new EnrollmentState(false, 0));
+
+        mockMvc.perform(delete(CONTESTS + "/spring-cup/enroll").header("Authorization", bearer(uid, "contest:update")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enrolled").value(false))
+                .andExpect(jsonPath("$.data.enrolledCount").value(0));
+    }
+
+    @Test
+    void participantsNeedContestUpdate() throws Exception {
+        UUID uid = UUID.randomUUID();
+        UUID alice = UUID.randomUUID();
+        when(enrollments.participants("spring-cup", 0, 20, null)).thenReturn(PageResponse.<EnrollmentRow>builder()
+                .data(List.of(new EnrollmentRow(new ScoreboardUser(alice, "alice", "Alice"), START)))
+                .page(0).size(20).totalElements(1).totalPages(1).hasPrev(false).hasNext(false).build());
+
+        mockMvc.perform(get(CONTESTS + "/spring-cup/enrollments").header("Authorization", bearer(uid, "problem:update")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(CONTESTS + "/spring-cup/enrollments").header("Authorization", bearer(uid, "contest:update")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].user.username").value("alice"))
+                .andExpect(jsonPath("$.pagination.totalElements").value(1));
+    }
+
+    @Test
+    void removingAParticipantNeedsContestUpdate() throws Exception {
+        UUID uid = UUID.randomUUID();
+        UUID alice = UUID.randomUUID();
+
+        mockMvc.perform(delete(CONTESTS + "/spring-cup/enrollments/" + alice).header("Authorization", bearer(uid)))
+                .andExpect(status().isForbidden());
+        verify(enrollments, never()).remove(any(), any());
+        mockMvc.perform(delete(CONTESTS + "/spring-cup/enrollments/" + alice)
+                        .header("Authorization", bearer(uid, "contest:update")))
+                .andExpect(status().isNoContent());
+        verify(enrollments).remove("spring-cup", alice);
+    }
+
+    @Test
+    void enrollmentRefusalsCarryTheirCode() throws Exception {
+        UUID uid = UUID.randomUUID();
+        when(enrollments.enroll("spring-cup", uid, false)).thenThrow(new AppException(ErrorCode.ENROLLMENT_CLOSED));
+
+        mockMvc.perform(post(CONTESTS + "/spring-cup/enroll").header("Authorization", bearer(uid)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ENROLLMENT_CLOSED"))
+                .andExpect(jsonPath("$.message").value("Registration for this contest is closed"));
     }
 }
