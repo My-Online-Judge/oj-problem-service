@@ -34,6 +34,18 @@ contest, DRAFT included, for contest managers (any of `contest:create`, `contest
 start first, then slug; `size` defaults to 20 and is capped at 100; `q` is literal text matched against the slug or
 title, ignoring case; the reply carries `data` plus `pagination`. The slug `all` is reserved (400 on create).
 
+Contest registration (design `docs/superpowers/specs/2026-10-25-contest-enrollment-and-redesign-design.md`): a contest
+is `OPEN` (anyone signed in may solve it while it runs) or `REQUIRED` (`t_contests.enrollment`, V9): users register
+first. `POST /api/v1/contests/{slug}/enroll` registers the caller (idempotent; from publish until the end; 409
+`ENROLLMENT_NOT_REQUIRED` on an OPEN contest, `ENROLLMENT_CLOSED` for a DRAFT or after the end), `DELETE …/enroll`
+withdraws before the start, `GET …/enrollments?page&size&q` lists the registered users newest first and
+`DELETE …/enrollments/{userId}` removes one (both `contest:update`). While a REQUIRED contest runs only registered users
+(and editors) see its problems through the contest page, every user does once it has ended, and its scoreboard lists
+every registered user (those without a counted submission after the ranked rows). The list and detail carry
+`enrollment`, `enrolledCount` and the caller's `enrolled`; the kind cannot change once the contest has started
+(409 `CONTEST_STARTED`). `GetJudgeSpec` takes the submitter in `user_id` and refuses a submitter who is not registered
+for a REQUIRED contest with FAILED_PRECONDITION and the trailer `oj-reason: NOT_ENROLLED` (oj-common 0.9.0).
+
 Checkers: `PUT/GET/DELETE /problems/{slug}/checker` (`problem:update`) store a C++ checker under its version, at
 `sources/<slug>/spj-<sha256 hex>.cpp`, and republish the bundle with `"spj": true`; the row's `spj` and `spj_version`
 (sha256 of the source) travel in the judge spec. Upload, removal, test-case changes and problem edits all take the
