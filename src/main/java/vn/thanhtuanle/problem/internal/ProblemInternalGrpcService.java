@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import vn.thanhtuanle.contest.ContestService;
+import vn.thanhtuanle.contest.enrollment.EnrollmentService;
 import vn.thanhtuanle.oj.common.grpc.ProblemRpcReasons;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetJudgeSpecRequest;
 import vn.thanhtuanle.oj.common.grpc.problem.v1.GetSampleTestCasesRequest;
@@ -40,6 +41,7 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
     private final InternalProblemQueries queries;
     private final TestCaseBundleStore bundleStore;
     private final ContestService contests;
+    private final EnrollmentService enrollments;
 
     @Override
     public void getJudgeSpec(GetJudgeSpecRequest request, StreamObserver<JudgeSpec> responseObserver) {
@@ -51,6 +53,13 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
             if (contestId.isEmpty()) {
                 responseObserver.onError(Status.FAILED_PRECONDITION.withDescription("Contest is not running")
                         .asRuntimeException(ProblemRpcReasons.contestNotRunning()));
+                return;
+            }
+            // A contest that requires registration takes only registered submitters (contest enrollment design
+            // §4.4): no user (a rejudge never names one), an unknown id or a stranger is refused with its own reason.
+            if (contests.requiresEnrollment(contestId.get()) && !enrolled(request.getUserId(), contestId.get())) {
+                responseObserver.onError(Status.FAILED_PRECONDITION.withDescription("Not enrolled in contest")
+                        .asRuntimeException(ProblemRpcReasons.notEnrolled()));
                 return;
             }
         }
@@ -132,5 +141,16 @@ public class ProblemInternalGrpcService extends ProblemInternalGrpc.ProblemInter
         responseObserver.onNext(ListVisibleSlugsResponse.newBuilder()
                 .addAllSlugs(queries.visibleSlugs(request.getSlugsList())).build());
         responseObserver.onCompleted();
+    }
+
+    private boolean enrolled(String userId, UUID contestId) {
+        if (userId == null || userId.isEmpty()) {
+            return false;
+        }
+        try {
+            return enrollments.isEnrolled(contestId, UUID.fromString(userId));
+        } catch (IllegalArgumentException notAUuid) {
+            return false;
+        }
     }
 }

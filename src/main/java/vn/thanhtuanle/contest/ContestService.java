@@ -265,6 +265,12 @@ public class ContestService {
                 .map(Contest::getId);
     }
 
+    /** Whether the contest takes only registered submitters (contest enrollment design §4.4). */
+    @Transactional(readOnly = true)
+    public boolean requiresEnrollment(UUID contestId) {
+        return contests.findById(contestId).map(c -> c.getEnrollment() == ContestEnrollment.REQUIRED).orElse(false);
+    }
+
     /**
      * Inserts the new contest now: a concurrent create of the same slug passed existsBySlug too, and only the unique
      * index tells the loser, who is refused like a taken slug instead of failing at commit.

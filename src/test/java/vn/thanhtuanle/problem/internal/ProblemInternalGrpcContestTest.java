@@ -17,6 +17,7 @@ import org.springframework.grpc.test.AutoConfigureInProcessTransport;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import vn.thanhtuanle.common.enums.ProblemStatus;
+import vn.thanhtuanle.contest.enrollment.EnrollmentService;
 import vn.thanhtuanle.contest.ContestRepository;
 import vn.thanhtuanle.contest.ContestService;
 import vn.thanhtuanle.contest.ContestEnrollment;
@@ -71,6 +72,7 @@ class ProblemInternalGrpcContestTest {
     @Autowired ProblemRepository problems;
     @Autowired ContestService contestService;
     @Autowired ContestRepository contests;
+    @Autowired EnrollmentService enrollmentService;
     @Autowired MutableClock clock;
     @MockitoBean TestCaseBundleStore bundleStore;
     @Value("${oj.rpc.token}") String token;
@@ -222,5 +224,104 @@ class ProblemInternalGrpcContestTest {
         assertThat(withoutBundle.getStatus().getCode()).isEqualTo(Status.Code.FAILED_PRECONDITION);
         assertThat(ProblemRpcReasons.isContestNotRunning(withoutBundle)).isFalse();
         assertThat(refusal(deleted, c).getStatus().getCode()).isEqualTo(Status.Code.NOT_FOUND);
+    }
+
+    // ---- registration (contest enrollment design §4.4): a REQUIRED contest takes only registered submitters ---------
+
+    /** A PUBLISHED contest from T to T + 3h that requires registration, holding these problems. */
+    private String required(String... problemSlugs) {
+        String slug = "c-grpc-req-" + UUID.randomUUID().toString().substring(0, 8);
+        contestService.create(new ContestRequest(slug, "Contest " + slug, null, T, END, ContestStatus.PUBLISHED,
+                List.of(problemSlugs), ContestEnrollment.REQUIRED), true);
+        return slug;
+    }
+
+    private void enroll(String contestSlug, UUID userId) {
+        enrollmentService.enroll(contestSlug, userId, false);
+    }
+
+    private JudgeSpec spec(String problemSlug, String contestSlug, UUID userId) {
+        return stub.getJudgeSpec(GetJudgeSpecRequest.newBuilder().setProblemSlug(problemSlug)
+                .setContestSlug(contestSlug).setUserId(userId.toString()).build());
+    }
+
+    private StatusRuntimeException refusal(String problemSlug, String contestSlug, UUID userId) {
+        return catchThrowableOfType(StatusRuntimeException.class, () -> spec(problemSlug, contestSlug, userId));
+    }
+
+    private static void assertNotEnrolled(StatusRuntimeException e) {
+        assertThat(e).as("the call must be refused").isNotNull();
+        assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.FAILED_PRECONDITION);
+        assertThat(e.getStatus().getDescription()).isEqualTo("Not enrolled in contest");
+        assertThat(ProblemRpcReasons.isNotEnrolled(e)).isTrue();
+        assertThat(ProblemRpcReasons.isContestNotRunning(e)).isFalse();
+    }
+
+    @Test
+    void anEnrolledSubmitterGetsTheSpec() {
+        String p = problem(ProblemStatus.INACTIVE);
+        String c = required(p);
+        UUID u = UUID.randomUUID();
+        enroll(c, u);
+
+        assertThat(spec(p, c, u).getContestId()).isEqualTo(contestId(c).toString());
+    }
+
+    @Test
+    void aStrangerIsRefusedWithNotEnrolled() {
+        String p = problem(ProblemStatus.ACTIVE);
+        String c = required(p);
+        enroll(c, UUID.randomUUID());
+
+        assertNotEnrolled(refusal(p, c, UUID.randomUUID()));
+    }
+
+    @Test
+    void anEmptyUserIdIsRefusedOnARequiredContest() {
+        String p = problem(ProblemStatus.ACTIVE);
+        String c = required(p);
+
+        assertNotEnrolled(refusal(p, c));
+    }
+
+    @Test
+    void anOpenContestIgnoresEnrollment() {
+        String p = problem(ProblemStatus.ACTIVE);
+        String c = contest(ContestStatus.PUBLISHED, p);
+
+        assertThat(spec(p, c, UUID.randomUUID()).getContestId()).isEqualTo(contestId(c).toString());
+        assertThat(spec(p, c).getContestId()).isEqualTo(contestId(c).toString());
+    }
+
+    @Test
+    void enrollmentIsPerContest() {
+        String p = problem(ProblemStatus.ACTIVE);
+        String a = required(p);
+        String b = required(p);
+        UUID u = UUID.randomUUID();
+        enroll(a, u);
+
+        assertThat(spec(p, a, u).getContestId()).isEqualTo(contestId(a).toString());
+        assertNotEnrolled(refusal(p, b, u));
+    }
+
+    @Test
+    void aRemovedUserIsRefused() {
+        String p = problem(ProblemStatus.ACTIVE);
+        String c = required(p);
+        UUID u = UUID.randomUUID();
+        enroll(c, u);
+        enrollmentService.remove(c, u);
+
+        assertNotEnrolled(refusal(p, c, u));
+    }
+
+    @Test
+    void notRunningComesBeforeNotEnrolled() {
+        String p = problem(ProblemStatus.ACTIVE);
+        String c = required(p);
+        clock.set(T.minusSeconds(1));
+
+        assertNotRunning(refusal(p, c, UUID.randomUUID()));
     }
 }
