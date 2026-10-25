@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import vn.thanhtuanle.contest.enrollment.EnrollmentRepository;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,11 +35,13 @@ public class ScoreboardService {
     private final ContestRepository contests;
     private final ContestScoreRepository scores;
     private final PublicUserClient publicUsers;
+    private final EnrollmentRepository enrollments;
     private final PlatformTransactionManager transactionManager;
     private final Clock clock;
 
     /** What the database holds for one board: the contest's labels and the score rows of its current problems. */
-    private record Board(Instant startsAt, List<String> labels, Map<UUID, String> labelByProblem, List<ScoreRow> rows) {
+    private record Board(Instant startsAt, List<String> labels, Map<UUID, String> labelByProblem, List<ScoreRow> rows,
+            Set<UUID> enrolled) {
     }
 
     /**
@@ -51,13 +55,14 @@ public class ScoreboardService {
         Board board = readOnly.execute(tx -> read(slug, editor));
         // Only the contestants the board lists (Task 13 review M1): one with only compile or system errors is not.
         Set<UUID> userIds = board.rows().stream().filter(Scoreboard::counts).map(ScoreRow::userId)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toCollection(HashSet::new));
+        userIds.addAll(board.enrolled());   // a REQUIRED contest's registered users, with or without a row
         if (userIds.isEmpty()) {
             return new ScoreboardResponse(board.labels(), List.of());
         }
         Map<UUID, PublicUser> users = publicUsers.byIds(userIds);
         return new ScoreboardResponse(board.labels(),
-                Scoreboard.rank(board.startsAt(), board.labelByProblem(), board.rows(), users));
+                Scoreboard.rank(board.startsAt(), board.labelByProblem(), board.rows(), users, board.enrolled()));
     }
 
     /**
@@ -85,6 +90,9 @@ public class ScoreboardService {
                 : scores.findByContestId(contest.getId()).stream()
                         .filter(r -> labelByProblem.containsKey(r.problemId()))
                         .toList();
-        return new Board(contest.getStartsAt(), labels, labelByProblem, rows);
+        // Registered users show from the start too (editors see them before it), zero rows included (design §4.2).
+        Set<UUID> enrolled = contest.getEnrollment() == ContestEnrollment.REQUIRED && !(upcoming && !editor)
+                ? enrollments.userIdsOf(contest.getId()) : Set.of();
+        return new Board(contest.getStartsAt(), labels, labelByProblem, rows, enrolled);
     }
 }

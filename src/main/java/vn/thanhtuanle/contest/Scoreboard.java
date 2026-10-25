@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -49,6 +50,16 @@ public final class Scoreboard {
      */
     public static List<ScoreboardRow> rank(Instant startsAt, Map<UUID, String> labelByProblem, List<ScoreRow> rows,
             Map<UUID, PublicUser> users) {
+        return rank(startsAt, labelByProblem, rows, users, Set.of());
+    }
+
+    /**
+     * As {@link #rank(Instant, Map, List, Map)}, then every id in {@code enrolled} without a counted row as a zero
+     * row (contest enrollment design §4.2): after the ranked rows, sharing the next rank, by username (nulls last,
+     * ignoring case) then id. A REQUIRED contest's board lists everyone who registered.
+     */
+    public static List<ScoreboardRow> rank(Instant startsAt, Map<UUID, String> labelByProblem, List<ScoreRow> rows,
+            Map<UUID, PublicUser> users, Set<UUID> enrolled) {
         Map<UUID, SortedMap<String, ProblemCell>> cellsByUser = new LinkedHashMap<>();
         for (ScoreRow row : rows) {
             String label = labelByProblem.get(row.problemId());
@@ -86,6 +97,15 @@ public final class Scoreboard {
                 rank = i + 1; // 1 + the number of lines ahead: more solved, or as many and a lower penalty
             }
             ranked.add(new ScoreboardRow(rank, line.user(), line.solved(), line.penalty(), line.problems()));
+        }
+        List<Line> zero = enrolled.stream()
+                .filter(id -> !cellsByUser.containsKey(id))
+                .map(id -> new Line(user(id, users.get(id)), 0, 0L, new TreeMap<>()))
+                .sorted(ORDER)
+                .toList();
+        int next = ranked.size() + 1;
+        for (Line line : zero) {
+            ranked.add(new ScoreboardRow(next, line.user(), 0, 0L, line.problems()));
         }
         return ranked;
     }

@@ -9,6 +9,7 @@ import vn.thanhtuanle.oj.common.identity.PublicUser;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -190,5 +191,27 @@ class ScoreboardTest {
                 row(alice, PA, 0, at("10:10:00"))), users);
 
         assertThat(board).extracting(r -> r.user().username()).containsExactly("alice", "Zed");
+    }
+
+    @Test
+    void enrolledUsersWithoutCountedRowsFollowTheRankedRowsWithASharedRank() {
+        // Contest enrollment design §4.2: a REQUIRED contest lists every registered user; those who never had a
+        // counted submission follow the ranked rows, share the next rank, and go by username (nulls last), then id.
+        UUID fast = user(), slow = user(), x = UUID.fromString("00000000-0000-0000-0000-00000000000a"),
+                y = user(), z = UUID.fromString("00000000-0000-0000-0000-00000000000b");
+        Map<UUID, PublicUser> users = Map.of(
+                x, new PublicUser(x, "zed", null, null, null),
+                z, new PublicUser(z, "amy", null, null, null));
+
+        List<ScoreboardRow> board = Scoreboard.rank(START, LABELS,
+                List.of(row(fast, PA, 0, at("10:05:00")), row(slow, PA, 0, at("10:20:00")), row(y, PB, 0, null)),
+                users, Set.of(x, y, z, fast));   // y has a row but it does not count (no accept, no wrong try)
+
+        assertThat(board).extracting(ScoreboardRow::rank, r -> r.user().id(), ScoreboardRow::solved)
+                .containsExactly(tuple(1, fast, 1), tuple(2, slow, 1), tuple(3, z, 0), tuple(3, x, 0), tuple(3, y, 0));
+        assertThat(board.get(2).problems()).isEmpty();
+        assertThat(board.get(2).penalty()).isZero();
+        // The 4-arg form is the old behaviour: no zero rows.
+        assertThat(Scoreboard.rank(START, LABELS, List.of(row(fast, PA, 0, at("10:05:00"))), Map.of())).hasSize(1);
     }
 }

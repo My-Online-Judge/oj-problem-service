@@ -106,6 +106,20 @@ class ScoreboardServiceTest extends PostgresTest {
         return jdbc.queryForObject("SELECT id FROM t_contests WHERE slug = ?", UUID.class, slug);
     }
 
+    /** A PUBLISHED contest that requires registration, from T to T + 3h. */
+    private String required(String... problemSlugs) {
+        String slug = "c-req-" + UUID.randomUUID().toString().substring(0, 8);
+        contests.create(new ContestRequest(slug, "Contest " + slug, null, T, T.plus(Duration.ofHours(3)),
+                ContestStatus.PUBLISHED, List.of(problemSlugs), ContestEnrollment.REQUIRED), true);
+        em.flush();
+        return slug;
+    }
+
+    private void enroll(String contest, UUID userId) {
+        jdbc.update("INSERT INTO t_contest_enrollments (contest_id, user_id, enrolled_at) VALUES (?, ?, now())",
+                contestId(contest), userId);
+    }
+
     private void score(String contest, UUID userId, String problemSlug, int attemptsBeforeAc, Instant acceptedAt) {
         jdbc.update("""
                 INSERT INTO t_contest_scores (contest_id, user_id, problem_id, attempts_before_ac, accepted_at)
@@ -309,5 +323,54 @@ class ScoreboardServiceTest extends PostgresTest {
             jdbc.update("DELETE FROM t_contests WHERE slug = ?", slug); // scores and problem links cascade
             jdbc.update("DELETE FROM t_problems WHERE problem_slug = ?", p);
         }
+    }
+
+    // ---- registration (contest enrollment design §4.2): a REQUIRED contest lists every registered user -------------
+
+    @Test
+    void enrolledUsersWithoutSubmissionsFollowTheRankedRows() {
+        String p = problem();
+        String slug = required(p);
+        UUID alice = UUID.randomUUID(), bob = UUID.randomUUID(), carol = UUID.randomUUID();
+        for (UUID u : List.of(alice, bob, carol)) {
+            enroll(slug, u);
+        }
+        score(slug, alice, p, 0, T.plus(Duration.ofMinutes(7)));
+        when(users.byIds(anyCollection())).thenReturn(Map.of(alice, profile(alice, "alice"),
+                bob, profile(bob, "bob"), carol, profile(carol, "carol")));
+        running();
+
+        ScoreboardResponse board = scoreboards.scoreboard(slug, false);
+
+        assertThat(board.rows()).extracting(ScoreboardRow::rank, r -> r.user().username(), ScoreboardRow::solved)
+                .containsExactly(tuple(1, "alice", 1), tuple(2, "bob", 0), tuple(2, "carol", 0));
+        verify(users).byIds(Set.of(alice, bob, carol));
+    }
+
+    @Test
+    void anOpenContestListsOnlyContestants() {
+        String p = problem();
+        String slug = contest(ContestStatus.PUBLISHED, p);
+        UUID alice = UUID.randomUUID();
+        score(slug, alice, p, 0, T.plus(Duration.ofMinutes(7)));
+        when(users.byIds(anyCollection())).thenReturn(Map.of(alice, profile(alice, "alice")));
+        running();
+
+        assertThat(scoreboards.scoreboard(slug, false).rows()).extracting(r -> r.user().username())
+                .containsExactly("alice");
+    }
+
+    @Test
+    void beforeTheStartARequiredContestShowsNoRowsToStudents() {
+        String slug = required(problem());
+        UUID alice = UUID.randomUUID(), bob = UUID.randomUUID();
+        enroll(slug, alice);
+        enroll(slug, bob);
+        when(users.byIds(anyCollection())).thenReturn(Map.of(alice, profile(alice, "alice"), bob, profile(bob, "bob")));
+        em.clear();   // still before T
+
+        assertThat(scoreboards.scoreboard(slug, false).rows()).isEmpty();
+        assertThat(scoreboards.scoreboard(slug, true).rows()).extracting(ScoreboardRow::rank, ScoreboardRow::solved)
+                .containsExactly(tuple(1, 0), tuple(1, 0));
     }
 }
