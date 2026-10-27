@@ -2,7 +2,7 @@ package vn.thanhtuanle.testcase;
 
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
-import io.minio.messages.Bucket;
+import io.minio.messages.ListAllMyBucketsResult.Bucket;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.ssl.DefaultSslBundleRegistry;
 import org.springframework.boot.ssl.SslBundle;
@@ -15,7 +15,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
-import javax.net.ssl.SSLHandshakeException;
+import java.security.cert.CertificateException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -53,7 +53,8 @@ class MinioConfigTlsTest {
     void defaultClientRejectsPrivateCa() {
         MinioClient client = new MinioConfig().minioClient(props(null), new DefaultSslBundleRegistry());
 
-        assertThat(catchThrowable(client::listBuckets)).isInstanceOf(SSLHandshakeException.class);
+        // MinIO 9 rethrows the handshake failure as an IllegalStateException around the certificate check's own error.
+        assertThat(catchThrowable(client::listBuckets)).hasCauseInstanceOf(CertificateException.class);
     }
 
     private static MinioProperties props(String sslBundle) {

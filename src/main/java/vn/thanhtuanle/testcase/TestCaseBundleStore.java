@@ -198,7 +198,7 @@ public class TestCaseBundleStore {
         try (InputStream is = new ByteArrayInputStream(data)) {
             minio.putObject(PutObjectArgs.builder()
                     .bucket(props.getBucket()).object(key)
-                    .stream(is, data.length, -1)
+                    .stream(is, (long) data.length, null)
                     .contentType(contentType)
                     .build());
         }

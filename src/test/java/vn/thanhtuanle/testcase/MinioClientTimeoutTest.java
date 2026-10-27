@@ -7,6 +7,7 @@ import org.springframework.boot.ssl.DefaultSslBundleRegistry;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
 
@@ -25,11 +26,16 @@ class MinioClientTimeoutTest {
             props.setReadTimeout(Duration.ofMillis(300));
             MinioClient client = new MinioConfig().minioClient(props, new DefaultSslBundleRegistry());
 
+            long start = System.nanoTime();
             Throwable thrown = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> catchThrowable(() ->
                     client.bucketExists(BucketExistsArgs.builder().bucket("test-cases").build())));
+            Duration took = Duration.ofNanos(System.nanoTime() - start);
 
             assertThat(thrown).isNotNull();
-            assertThat(timedOut(thrown)).as("a SocketTimeoutException in the cause chain of %s", thrown).isTrue();
+            // MinIO 9 drops the outer SocketTimeoutException and keeps the socket OkHttp closed on timeout, so the chain
+            // may hold either: what matters is that the call gave up on its own, near the read timeout.
+            assertThat(timedOut(thrown)).as("a socket timeout or close in the cause chain of %s", thrown).isTrue();
+            assertThat(took).isLessThan(Duration.ofSeconds(2));
         }
     }
 
@@ -42,7 +48,7 @@ class MinioClientTimeoutTest {
 
     private static boolean timedOut(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof SocketTimeoutException) {
+            if (t instanceof SocketTimeoutException || t instanceof SocketException) {
                 return true;
             }
         }
