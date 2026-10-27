@@ -59,9 +59,7 @@ public class EnrollmentService {
         if (contest.getStatus() != ContestStatus.PUBLISHED || phase(contest) == ContestPhase.ENDED) {
             throw new AppException(ErrorCode.ENROLLMENT_CLOSED);
         }
-        Enrollment.Key key = new Enrollment.Key(contest.getId(), userId);
-        if (!enrollments.existsById(key)) {
-            enrollments.saveAndFlush(new Enrollment(key, clock.instant()));
+        if (enrollments.insertIfAbsent(contest.getId(), userId, clock.instant()) > 0) {
             log.info("User {} registered for contest {}", userId, slug);
         }
         return new EnrollmentState(true, count(contest));

@@ -4,6 +4,10 @@ spring:
       on-profile: test
   devtools:
     add-properties: true
+  datasource:
+    # Spring Boot's embedded H2 URL, plus PostgreSQL mode so the Postgres statements the services use (INSERT ... ON
+    # CONFLICT DO NOTHING) run here too. The random name keeps one database per test context, as the default did.
+    url: jdbc:h2:mem:${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:

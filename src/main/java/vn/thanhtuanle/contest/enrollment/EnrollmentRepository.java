@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -21,6 +22,19 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Enrollme
     }
 
     boolean existsByKeyContestIdAndKeyUserId(UUID contestId, UUID userId);
+
+    /**
+     * Registers the user unless already registered: 1 row inserted, or 0. One statement, so two registers of the same
+     * user that race (two tabs, a retried request) both answer "registered"; a check-then-insert would hand the loser
+     * a duplicate-key error once the winner commits.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            INSERT INTO t_contest_enrollments (contest_id, user_id, enrolled_at)
+            VALUES (:contestId, :userId, :enrolledAt)
+            ON CONFLICT DO NOTHING""", nativeQuery = true)
+    int insertIfAbsent(@Param("contestId") UUID contestId, @Param("userId") UUID userId,
+            @Param("enrolledAt") Instant enrolledAt);
 
     long countByKeyContestId(UUID contestId);
 

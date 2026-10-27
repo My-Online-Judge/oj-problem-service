@@ -440,9 +440,12 @@ public class ContestService {
                 .map(userId -> progress(contest, shown, userId))
                 .orElse(Map.of());
         Registrations registrations = registrations(List.of(contest), viewer);
+        // The count comes from the problem rows whether or not they are shown (the same count the list carries).
+        int problemCount = contestProblems.countByContestIds(List.of(contest.getId())).stream()
+                .findFirst().map(c -> (int) c.getProblems()).orElse(0);
         return new ContestDetail(contest.getSlug(), contest.getTitle(), contest.getDescription(), contest.getStartsAt(),
-                contest.getEndsAt(), contest.getStatus(), phase, views, progress, now, contest.getEnrollment(),
-                registrations.count(contest.getId()), registrations.enrolled(contest.getId()));
+                contest.getEndsAt(), contest.getStatus(), phase, views, problemCount, progress, now,
+                contest.getEnrollment(), registrations.count(contest.getId()), registrations.enrolled(contest.getId()));
     }
 
     /** The viewer's score rows by label, for the problems shown. */

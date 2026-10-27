@@ -96,7 +96,7 @@ class ContestControllerSecurityTest {
 
     private static ContestDetail detail(String slug) {
         return new ContestDetail(slug, "Spring cup", null, START, START.plusSeconds(3 * 3600), ContestStatus.PUBLISHED,
-                ContestPhase.RUNNING, List.of(), Map.of(), NOW, ContestEnrollment.OPEN, 0, false);
+                ContestPhase.RUNNING, List.of(), 2, Map.of(), NOW, ContestEnrollment.OPEN, 0, false);
     }
 
     private static PageResponse<ContestSummary> page(String slug) {

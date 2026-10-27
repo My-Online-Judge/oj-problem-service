@@ -382,6 +382,21 @@ class ContestServiceTest extends PostgresTest {
         assertThat(contests.detail(slug, false, false, Optional.empty()).problems()).hasSize(2);
     }
 
+    /** The head of the contest page says how many problems are coming, while the list itself stays hidden. */
+    @Test
+    void theDetailCountsTheProblemsEvenWhileHidden() {
+        String p1 = problem(), p2 = problem();
+        String slug = slug("count");
+        contests.create(published(slug, p1, p2), true);
+        persisted();
+        clock.set(T.minusSeconds(1));
+
+        ContestDetail anyone = contests.detail(slug, false, false, Optional.empty());
+        assertThat(anyone.problems()).isEmpty();
+        assertThat(anyone.problemCount()).isEqualTo(2);
+        assertThat(contests.detail(slug, true, true, Optional.empty()).problemCount()).isEqualTo(2);
+    }
+
     /** SP12: INACTIVE problems are for problem editors. Seeing a contest's problems early takes problem:update too. */
     @Test
     void aContestEditorWithoutProblemUpdateSeesProblemsOnlyOnceStarted() {

@@ -9,6 +9,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import vn.thanhtuanle.common.enums.ProblemStatus;
 import vn.thanhtuanle.common.exception.ErrorCode;
 import vn.thanhtuanle.contest.dto.ContestRequest;
+import vn.thanhtuanle.contest.dto.EnrollmentState;
+import vn.thanhtuanle.contest.enrollment.EnrollmentService;
 import vn.thanhtuanle.entity.Problem;
 import vn.thanhtuanle.oj.common.web.error.AppException;
 import vn.thanhtuanle.oj.common.web.error.ResourceAlreadyExistException;
@@ -36,6 +38,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 class ContestConcurrencyTest extends PostgresTest {
 
     @Autowired ContestService contests;
+    @Autowired EnrollmentService enrollments;
     @Autowired ProblemRepository problems;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager tm;
@@ -98,6 +101,45 @@ class ContestConcurrencyTest extends PostgresTest {
     private static void assertContestStarted(Throwable refused) {
         assertThat(refused).isInstanceOf(AppException.class);
         assertThat(((AppException) refused).getErrorCode()).isEqualTo(ErrorCode.CONTEST_STARTED);
+    }
+
+    /**
+     * Two registers of one user for one contest (two tabs, a retried request): the other has inserted the row but
+     * not committed when ours looks. Ours waits on the primary key and then answers "registered", not 500.
+     */
+    @Test
+    void aRegisterThatRacesAnotherOfTheSameUserAnswersRegistered() throws Exception {
+        String problem = problem();
+        String slug = slug();
+        Instant start = Instant.now().plus(Duration.ofDays(1)).truncatedTo(ChronoUnit.SECONDS);
+        contests.create(new ContestRequest(slug, "Contest " + slug, null, start, start.plus(Duration.ofHours(3)),
+                ContestStatus.PUBLISHED, List.of(problem), ContestEnrollment.REQUIRED), true);
+        UUID contestId = jdbc.queryForObject("SELECT id FROM t_contests WHERE slug = ?", UUID.class, slug);
+        UUID user = UUID.randomUUID();
+        CountDownLatch inserted = new CountDownLatch(1);
+        Thread other = new Thread(() -> new TransactionTemplate(tm).executeWithoutResult(tx -> {
+            jdbc.update("INSERT INTO t_contest_enrollments (contest_id, user_id, enrolled_at) VALUES (?, ?, now())",
+                    contestId, user);
+            inserted.countDown();
+            try {
+                Thread.sleep(2000); // ours must block on the primary key meanwhile
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+        other.start();
+        assertThat(inserted.await(5, TimeUnit.SECONDS)).isTrue();
+
+        long started = System.nanoTime();
+        EnrollmentState state = enrollments.enroll(slug, user, false);
+        other.join();
+
+        assertThat(System.nanoTime() - started).as("blocked until the other committed")
+                .isGreaterThan(TimeUnit.SECONDS.toNanos(1));
+        assertThat(state.enrolled()).isTrue();
+        assertThat(state.enrolledCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM t_contest_enrollments WHERE contest_id = ?",
+                Integer.class, contestId)).isEqualTo(1);
     }
 
     /** A competing create has inserted the slug but not committed when ours passes existsBySlug. */
