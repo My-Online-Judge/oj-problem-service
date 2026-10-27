@@ -24,10 +24,14 @@ class ProblemSchemaTest extends PostgresTest {
     @Autowired DataSource dataSource;
 
     @Test
-    void flywayBuildsTheWholeSchemaAndSeedsNothing() {
+    void flywayBuildsTheWholeSchemaAndSeedsNothing() throws Exception {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
                 String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM t_problems", Integer.class)).isZero();
+        // The shared database already holds what other test classes wrote, in whatever order they ran: whether the
+        // migrations seed anything is read from a database of their own.
+        String url = freshDatabase("seed");
+        Flyway.configure().dataSource(url, PostgresTest.POSTGRES.getUsername(), PostgresTest.POSTGRES.getPassword()).load().migrate();
+        assertThat(jdbcAt(url).queryForObject("SELECT count(*) FROM t_problems", Integer.class)).isZero();
     }
 
     /** The contest list reads by end time (running, upcoming and past are all split at ends_at). */
@@ -40,17 +44,12 @@ class ProblemSchemaTest extends PostgresTest {
     /** V6 reads the numbers out of the stored paths (<code>slug/N.in</code>), ignoring names that are not numbers. */
     @Test
     void v6BackfillsTheHighWaterMark() throws Exception {
-        String db = "backfill_" + UUID.randomUUID().toString().replace("-", "");
-        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
-            st.execute("CREATE DATABASE " + db);
-        }
-        String url = PostgresTest.POSTGRES.getJdbcUrl().replaceFirst("/[^/?]+(\\?|$)", "/" + db + "$1");
+        String url = freshDatabase("backfill");
         Flyway at5 = Flyway.configure().dataSource(url, PostgresTest.POSTGRES.getUsername(), PostgresTest.POSTGRES.getPassword())
                 .target("5").load();
         at5.migrate();
 
-        JdbcTemplate other = new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
-                url, PostgresTest.POSTGRES.getUsername(), PostgresTest.POSTGRES.getPassword()));
+        JdbcTemplate other = jdbcAt(url);
         UUID problem = UUID.randomUUID();
         other.update("""
                 INSERT INTO t_problems (id, hardness_level, memory_limit, status, time_limit, created_at, updated_at, title, problem_slug)
@@ -71,5 +70,19 @@ class ProblemSchemaTest extends PostgresTest {
                 .isEqualTo(7);
         assertThat(other.queryForObject("SELECT test_case_high_water FROM t_problems WHERE id = ?", Integer.class, empty))
                 .isZero();
+    }
+
+    /** An empty database of its own in the shared container, for a migration run nothing else has touched. */
+    private String freshDatabase(String prefix) throws Exception {
+        String db = prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
+            st.execute("CREATE DATABASE " + db);
+        }
+        return PostgresTest.POSTGRES.getJdbcUrl().replaceFirst("/[^/?]+(\\?|$)", "/" + db + "$1");
+    }
+
+    private static JdbcTemplate jdbcAt(String url) {
+        return new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                url, PostgresTest.POSTGRES.getUsername(), PostgresTest.POSTGRES.getPassword()));
     }
 }
