@@ -30,7 +30,7 @@ public class MinioTestCaseSourceStore implements TestCaseSourceStore {
         try (InputStream is = new ByteArrayInputStream(content)) {
             minio.putObject(PutObjectArgs.builder()
                     .bucket(props.getBucket()).object(key(path))
-                    .stream(is, content.length, -1)
+                    .stream(is, (long) content.length, null)
                     .contentType("application/octet-stream")
                     .build());
         } catch (Exception e) {

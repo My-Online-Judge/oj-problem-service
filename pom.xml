@@ -27,6 +27,8 @@
 		<url/>
 	</scm>
 	<properties>
+		<!-- OkHttp 5 (under MinIO 9) is built with Kotlin 2.2; Spring Boot's managed stdlib (1.9) is too old for it. -->
+		<kotlin.version>2.2.21</kotlin.version>
 		<java.version>17</java.version>
 		<org.mapstruct.version>1.6.3</org.mapstruct.version>
 		<!-- The last Spring gRPC line on Boot 3.5; it manages grpc 1.76.0 / protobuf 4.32.1, the versions
@@ -175,7 +177,14 @@
 		<dependency>
 			<groupId>io.minio</groupId>
 			<artifactId>minio</artifactId>
-			<version>8.5.17</version>
+			<version>9.0.3</version>
+		</dependency>
+		<!-- MinIO 9 uses OkHttp 5, whose classes live in okhttp-jvm: Maven does not follow the Gradle metadata that
+		     points okhttp there, so it is named here, at the version MinIO asks for. -->
+		<dependency>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>okhttp-jvm</artifactId>
+			<version>5.3.2</version>
 		</dependency>
 		<!-- Kafka: verdict events for the statistics -->
 		<dependency>

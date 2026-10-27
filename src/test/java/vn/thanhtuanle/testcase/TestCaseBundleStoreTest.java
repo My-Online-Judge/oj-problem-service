@@ -113,7 +113,9 @@ class TestCaseBundleStoreTest {
 
     @Test
     void findCurrentVersion_throwsWhenMinioCannotBeRead() throws Exception {
-        when(minio.getObject(any(GetObjectArgs.class))).thenThrow(new java.io.IOException("connection refused"));
+        // MinIO 9 reports an I/O failure as an IllegalStateException around its cause.
+        when(minio.getObject(any(GetObjectArgs.class)))
+                .thenThrow(new IllegalStateException(new java.io.IOException("connection refused")));
         TestCaseBundleStore store = new TestCaseBundleStore(minio, props());
 
         assertThatThrownBy(() -> store.findCurrentVersion("p")).isInstanceOf(TestCaseBundleException.class);
