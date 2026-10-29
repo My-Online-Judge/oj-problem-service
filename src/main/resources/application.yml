@@ -48,6 +48,11 @@ spring:
       # Only the dead-letter publisher produces: it forwards the record as it was read.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      # A listener that subscribes before its ACLs exist gets TOPIC_AUTHORIZATION_FAILED; without this interval Spring
+      # Kafka stops that container for good and the statistics stop counting until a restart. On K3s nothing orders
+      # this pod after the kafka-init Job, as compose's depends_on does, so keep retrying until the ACLs are there.
+      auth-exception-retry-interval: 5s
 
 management:
   endpoints:
