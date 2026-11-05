@@ -24,14 +24,17 @@ public interface ProcessedVerdictRepository extends JpaRepository<ProcessedVerdi
         UUID getProblemId();
     }
 
-    /** @return 1 the first time this submission is seen (counted under {@code lastStatus}), 0 every time after */
+    /**
+     * @param lastGeneration the verdict's generation, or null for a verdict without one
+     * @return 1 the first time this submission is seen (counted under {@code lastStatus}), 0 every time after
+     */
     @Modifying
     @Query(value = """
-            INSERT INTO t_processed_verdicts (submission_id, processed_at, last_status)
-            VALUES (:submissionId, :processedAt, :lastStatus)
+            INSERT INTO t_processed_verdicts (submission_id, processed_at, last_status, last_generation)
+            VALUES (:submissionId, :processedAt, :lastStatus, CAST(:lastGeneration AS integer))
             ON CONFLICT (submission_id) DO NOTHING""", nativeQuery = true)
     int markProcessed(@Param("submissionId") UUID submissionId, @Param("processedAt") LocalDateTime processedAt,
-                      @Param("lastStatus") int lastStatus);
+                      @Param("lastStatus") int lastStatus, @Param("lastGeneration") Integer lastGeneration);
 
     /** The submission's row, locked until the transaction ends: two verdicts of one submission take turns. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

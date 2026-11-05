@@ -14,10 +14,16 @@ import java.util.Optional;
 /**
  * Adds a terminal verdict to its problem's statistics, once per submission: the events arrive at least
  * once (outbox relay retries, consumer re-deliveries), so the submission id is recorded in the same
- * transaction as the count, with the verdict it is counted under. A rejudge moves the submission's count
- * from that verdict to the new one. Every verdict of a known problem then goes on, in the same transaction, to
- * the contest scores ({@link ContestScoreRecorder}): duplicates and unchanged rejudges too, since a score is
- * recomputed from all of its verdicts and so can be recomputed any number of times.
+ * transaction as the count, with the verdict it is counted under and its generation ({@code rejudgeCount}). A rejudge
+ * moves the submission's count from that verdict to the new one, unless it is of an older generation than the one
+ * counted: two verdicts of one submission can arrive in either order (two outbox relay passes send disjoint batches at
+ * once, a dead letter is replayed after a newer rejudge), and the newest must stay counted. A different verdict of the
+ * generation already counted (one generation has one verdict, so only a producer bug sends it) leaves the counted one
+ * and is logged as an error. A verdict without a
+ * generation (a producer older than oj-common 0.10.0) cannot be ordered and is applied as it arrives. Every verdict of a
+ * known problem then goes on, in the same transaction, to the contest scores ({@link ContestScoreRecorder}):
+ * duplicates, unchanged and older rejudges too, since a score is recomputed from the verdicts counted here and so can be
+ * recomputed any number of times.
  */
 @Service
 @RequiredArgsConstructor
@@ -30,8 +36,9 @@ public class ProblemStatsRecorder {
     private final ContestScoreRecorder contestScores;
 
     /**
-     * @return true when the counts changed; false for a duplicate, a rejudge that changes nothing, or a problem
-     *         this service does not know
+     * @return true when the counts changed; false for a duplicate, a rejudge that changes nothing, a rejudge of an
+     *         older generation than the one counted, a different verdict of the counted generation, or a problem this
+     *         service does not know
      */
     @Transactional
     public boolean record(SubmissionVerdictRecorded event) {
@@ -45,7 +52,8 @@ public class ProblemStatsRecorder {
     }
 
     private boolean recordFirst(SubmissionVerdictRecorded event) {
-        if (processedVerdictRepository.markProcessed(event.submissionId(), LocalDateTime.now(), event.verdict()) == 0) {
+        if (processedVerdictRepository.markProcessed(event.submissionId(), LocalDateTime.now(), event.verdict(),
+                event.rejudgeCount()) == 0) {
             log.debug("Verdict of submission {} already counted", event.submissionId());
             return false;
         }
@@ -65,8 +73,26 @@ public class ProblemStatsRecorder {
         }
         ProcessedVerdict processed = row.orElseThrow(() -> new IllegalStateException(
                 "Processed verdict of submission " + event.submissionId() + " neither inserted nor found"));
-        processed.setProcessedAt(LocalDateTime.now());
+        Integer generation = event.rejudgeCount();
+        Integer counted = processed.getLastGeneration();
+        if (generation != null && counted != null && generation < counted) {
+            log.info("Rejudge of submission {} ({}) skipped: generation {} is older than the counted generation {}",
+                    event.submissionId(), event.verdict(), generation, counted);
+            return false;
+        }
         Integer previous = processed.getLastStatus();
+        if (generation != null && generation.equals(counted) && previous != null && previous != event.verdict()) {
+            // submission-service lands one verdict per generation, so a second, different one is a producer bug:
+            // the counted verdict stays, and the conflict is logged for scripts/stats-check.sh to be run.
+            log.error("Conflicting verdict {} for submission {} in generation {}: verdict {} is already counted for "
+                    + "it, statistics left unchanged", event.verdict(), event.submissionId(), generation, previous);
+            return false;
+        }
+        processed.setProcessedAt(LocalDateTime.now());
+        if (generation != null) {
+            // Not older than the counted one (or none counted yet): from now on it is the newest applied.
+            processed.setLastGeneration(generation);
+        }
         if (previous == null) {
             // Counted before V5 under a verdict nobody recorded: moving "from" the new verdict could count it twice,
             // so the counts stay as they are and the row stays unknown for every later rejudge too.

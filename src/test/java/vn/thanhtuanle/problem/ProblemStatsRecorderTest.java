@@ -62,6 +62,22 @@ class ProblemStatsRecorderTest extends PostgresTest {
         return new SubmissionVerdictRecorded(submissionId, problemId, verdict, true);
     }
 
+    /** A first verdict as producers from oj-common 0.10.0 send it: generation 0. */
+    private static SubmissionVerdictRecorded firstOfGeneration(UUID submissionId, UUID problemId, int verdict) {
+        return new SubmissionVerdictRecorded(submissionId, problemId, verdict, false, null, null, null, 0);
+    }
+
+    /** The verdict of the {@code generation}-th rejudge. */
+    private static SubmissionVerdictRecorded rejudge(UUID submissionId, UUID problemId, int verdict, int generation) {
+        return new SubmissionVerdictRecorded(submissionId, problemId, verdict, true, null, null, null, generation);
+    }
+
+    private Integer lastGeneration(UUID submissionId) {
+        flush();
+        return jdbc.queryForObject("SELECT last_generation FROM t_processed_verdicts WHERE submission_id = ?",
+                Integer.class, submissionId);
+    }
+
     private Long count(UUID problemId, int verdict) {
         return jdbc.query("SELECT submission_count FROM t_problem_stats WHERE problem_id = ? AND verdict = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, problemId, verdict);
@@ -221,6 +237,140 @@ class ProblemStatsRecorderTest extends PostgresTest {
         assertThat(output).contains("previous verdict unknown");
     }
 
+    // --- Generations (oj-common 0.10.0): the newest verdict stays counted whatever order the verdicts arrive in.
+
+    @Test
+    void aFirstVerdictRecordsItsGeneration() {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+
+        assertThat(recorder.record(firstOfGeneration(submissionId, problemId, AC))).isTrue();
+
+        assertThat(lastGeneration(submissionId)).isZero();
+    }
+
+    @Test
+    void anOlderRejudgeArrivingAfterANewerOneIsIgnored(CapturedOutput output) {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        recorder.record(firstOfGeneration(submissionId, problemId, AC));
+        // Two relay passes sent the 2nd rejudge's verdict before the 1st's.
+        assertThat(recorder.record(rejudge(submissionId, problemId, WA, 2))).isTrue();
+        LocalDateTime longAgo = LocalDateTime.of(2020, 1, 1, 0, 0);
+        flush();
+        jdbc.update("UPDATE t_processed_verdicts SET processed_at = ? WHERE submission_id = ?", longAgo, submissionId);
+
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE, 1))).isFalse();
+
+        assertThat(count(problemId, AC)).isZero();
+        assertThat(count(problemId, WA)).isEqualTo(1L);
+        assertThat(count(problemId, TLE)).isNull();
+        assertThat(lastStatus(submissionId)).isEqualTo(WA);
+        assertThat(lastGeneration(submissionId)).isEqualTo(2);
+        assertThat(processedAt(submissionId)).isEqualTo(longAgo);
+        assertThat(output).contains("generation 1 is older than the counted generation 2");
+    }
+
+    @Test
+    void aRejudgeReplayedFromTheDeadLetterTopicAfterANewerRejudgeIsIgnored() {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        recorder.record(firstOfGeneration(submissionId, problemId, AC));
+        recorder.record(rejudge(submissionId, problemId, WA, 1));
+        recorder.record(rejudge(submissionId, problemId, TLE, 2));
+
+        // The 1st rejudge's verdict, dead-lettered once, replayed by scripts/replay-dlq.sh.
+        assertThat(recorder.record(rejudge(submissionId, problemId, WA, 1))).isFalse();
+
+        assertThat(count(problemId, WA)).isZero();
+        assertThat(count(problemId, TLE)).isEqualTo(1L);
+        assertThat(lastStatus(submissionId)).isEqualTo(TLE);
+        assertThat(lastGeneration(submissionId)).isEqualTo(2);
+    }
+
+    @Test
+    void aNewerRejudgeCountedFirstKeepsTheOlderVerdictsOut() {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+
+        // Nothing counted yet: the 2nd rejudge's verdict is the first to arrive.
+        assertThat(recorder.record(rejudge(submissionId, problemId, WA, 2))).isTrue();
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE, 1))).isFalse();
+        assertThat(recorder.record(firstOfGeneration(submissionId, problemId, AC))).isFalse();
+
+        assertThat(count(problemId, WA)).isEqualTo(1L);
+        assertThat(count(problemId, TLE)).isNull();
+        assertThat(count(problemId, AC)).isNull();
+        assertThat(lastGeneration(submissionId)).isEqualTo(2);
+    }
+
+    @Test
+    void aRejudgeWithoutAGenerationIsAppliedAsItArrivesAndKeepsTheCountedGeneration() {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        recorder.record(firstOfGeneration(submissionId, problemId, AC));
+        recorder.record(rejudge(submissionId, problemId, WA, 2));
+
+        // From a producer older than 0.10.0 (a dead letter written before the deploy): it cannot be ordered.
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE))).isTrue();
+
+        assertThat(count(problemId, WA)).isZero();
+        assertThat(count(problemId, TLE)).isEqualTo(1L);
+        assertThat(lastStatus(submissionId)).isEqualTo(TLE);
+        assertThat(lastGeneration(submissionId)).isEqualTo(2);
+    }
+
+    @Test
+    void aRowCountedBeforeV10TakesTheFirstGenerationThatArrives() {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        jdbc.update("INSERT INTO t_processed_verdicts (submission_id, processed_at, last_status) VALUES (?, now(), ?)",
+                submissionId, AC);
+        jdbc.update("INSERT INTO t_problem_stats (problem_id, verdict, submission_count) VALUES (?, ?, 1)", problemId, AC);
+
+        assertThat(recorder.record(rejudge(submissionId, problemId, WA, 1))).isTrue();
+
+        assertThat(count(problemId, AC)).isZero();
+        assertThat(count(problemId, WA)).isEqualTo(1L);
+        assertThat(lastGeneration(submissionId)).isEqualTo(1);
+    }
+
+    @Test
+    void aDifferentVerdictOfTheCountedGenerationLeavesTheCountedOne(CapturedOutput output) {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        recorder.record(firstOfGeneration(submissionId, problemId, AC));
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE, 2))).isTrue();
+        LocalDateTime longAgo = LocalDateTime.of(2020, 1, 1, 0, 0);
+        flush();
+        jdbc.update("UPDATE t_processed_verdicts SET processed_at = ? WHERE submission_id = ?", longAgo, submissionId);
+
+        // One generation has one verdict: a second, different one can only come from a producer bug.
+        assertThat(recorder.record(rejudge(submissionId, problemId, AC, 2))).isFalse();
+        // The same verdict of that generation is a plain duplicate.
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE, 2))).isFalse();
+
+        assertThat(count(problemId, TLE)).isEqualTo(1L);
+        assertThat(count(problemId, AC)).isZero();
+        assertThat(lastStatus(submissionId)).isEqualTo(TLE);
+        assertThat(lastGeneration(submissionId)).isEqualTo(2);
+        assertThat(output).contains("Conflicting verdict 0 for submission " + submissionId + " in generation 2: verdict 1");
+    }
+
+    @Test
+    void aRejudgeWithTheSameVerdictStillRecordsItsGeneration() {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        recorder.record(firstOfGeneration(submissionId, problemId, AC));
+
+        assertThat(recorder.record(rejudge(submissionId, problemId, AC, 1))).isFalse();
+        assertThat(recorder.record(rejudge(submissionId, problemId, WA, 0))).isFalse();
+
+        assertThat(count(problemId, AC)).isEqualTo(1L);
+        assertThat(count(problemId, WA)).isNull();
+        assertThat(lastGeneration(submissionId)).isEqualTo(1);
+    }
+
     @Test
     void decrementNeverGoesBelowZero() {
         UUID problemId = problem();
@@ -270,6 +420,28 @@ class ProblemStatsRecorderTest extends PostgresTest {
             assertThat(count(problemId, WA)).isZero();
             assertThat(count(problemId, TLE)).isEqualTo(1L);
             assertThat(lastStatus(submissionId)).isEqualTo(TLE);
+        } finally {
+            deleteCommitted(problemId, submissionId);
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void anOlderRejudgeWaitingOnTheRowForANewerOneIsIgnored() throws Exception {
+        UUID problemId = problems.save(Problem.builder().title("race").problemSlug("race-" + UUID.randomUUID())
+                .status(ProblemStatus.ACTIVE.getValue()).timeLimit(1000).memoryLimit(256L).build()).getId();
+        UUID submissionId = UUID.randomUUID();
+        try {
+            recorder.record(firstOfGeneration(submissionId, problemId, AC));
+
+            // The older verdict must read the generation the newer one committed, not the 0 it saw before.
+            race(rejudge(submissionId, problemId, TLE, 2), rejudge(submissionId, problemId, WA, 1));
+
+            assertThat(count(problemId, AC)).isZero();
+            assertThat(count(problemId, WA)).isNull();
+            assertThat(count(problemId, TLE)).isEqualTo(1L);
+            assertThat(lastStatus(submissionId)).isEqualTo(TLE);
+            assertThat(lastGeneration(submissionId)).isEqualTo(2);
         } finally {
             deleteCommitted(problemId, submissionId);
         }
