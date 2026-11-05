@@ -14,7 +14,8 @@ import java.util.UUID;
 
 /**
  * A submission whose verdict is already in {@link ProblemStat}: events arrive at least once, counts must not. The
- * verdict it is counted under is kept so that a rejudge can move the count.
+ * verdict it is counted under is kept so that a rejudge can move the count, and the newest generation applied so that
+ * an older verdict arriving later does not.
  */
 @Entity
 @Table(name = "t_processed_verdicts")
@@ -35,4 +36,12 @@ public class ProcessedVerdict {
     @Setter
     @Column(name = "last_status")
     private Integer lastStatus;
+
+    /**
+     * The newest generation ({@code rejudgeCount}) applied to this submission; null when it was counted before V10 or
+     * only verdicts without a generation have arrived.
+     */
+    @Setter
+    @Column(name = "last_generation")
+    private Integer lastGeneration;
 }

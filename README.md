@@ -79,10 +79,17 @@ Replaying the dead letters once the cause is fixed — from the `judge-deploymen
 
 The script copies the records, keys included, through the broker's loopback listener; its consumer group
 `dlq-replay` commits offsets, so a second run copies only records not copied before. It is safe for first
-verdicts: a submission is counted once however often its event arrives. A REJUDGE event replayed after a newer
-rejudge of the same submission moves the statistics, and its contest score, back to the older verdict (the event
-has no ordering field): replay rejudge events only when no newer rejudge happened for those submissions, or run
-`scripts/stats-check.sh` afterwards (it checks the counts, not contest scores).
+verdicts: a submission is counted once however often its event arrives.
+
+Rejudge order: two verdicts of one submission can arrive in either order (two outbox relay passes send disjoint
+batches at once; a dead letter is replayed after a newer rejudge). From oj-common 0.10.0 each verdict carries its
+generation (`rejudgeCount`: 0 for the first verdict, n after the n-th rejudge), and `t_processed_verdicts.last_generation`
+(V10) keeps the newest generation counted. A rejudge of an older generation is ignored, statistics and contest score
+both, and logged as "generation … is older than the counted generation …"; a rejudge of the same or a newer one moves
+the count as before. A verdict without a generation (from a submission-service older than oj-common 0.10.0, or
+dead-lettered before that deploy) cannot be ordered and is applied as it arrives: replay such rejudge events only when
+no newer rejudge happened for those submissions, or run `scripts/stats-check.sh` afterwards (it checks the counts, not
+contest scores). Deploy problem-service before submission-service: it reads verdicts with and without a generation.
 
 ## Build and test
 

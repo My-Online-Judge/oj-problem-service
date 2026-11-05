@@ -16,7 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * problem-db is built by Flyway alone: V1 (the live schema) + V2 (statistics) + V3 (integrity) + V4 (statement text)
  * + V5 (the verdict a submission is counted under) + V6 (the test-case number high-water mark) + V7 (contests) + V8
- * (checker problems). The context starting at all proves Hibernate's ddl-auto=validate accepts them for every entity.
+ * (checker problems) + V9 (contest enrollment) + V10 (the generation a submission is counted under). The context
+ * starting at all proves Hibernate's ddl-auto=validate accepts them for every entity.
  */
 class ProblemSchemaTest extends PostgresTest {
 
@@ -26,7 +27,7 @@ class ProblemSchemaTest extends PostgresTest {
     @Test
     void flywayBuildsTheWholeSchemaAndSeedsNothing() throws Exception {
         assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+                String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
         // The shared database already holds what other test classes wrote, in whatever order they ran: whether the
         // migrations seed anything is read from a database of their own.
         String url = freshDatabase("seed");

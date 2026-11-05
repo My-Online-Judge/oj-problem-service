@@ -63,6 +63,11 @@ class ContestScoreRecorderTest extends PostgresTest {
         SubmissionVerdictRecorded rejudge(UUID submissionId, int verdict, int minute) {
             return new SubmissionVerdictRecorded(submissionId, problemId, verdict, true, userId, contestId, at(minute));
         }
+
+        SubmissionVerdictRecorded rejudge(UUID submissionId, int verdict, int minute, int generation) {
+            return new SubmissionVerdictRecorded(submissionId, problemId, verdict, true, userId, contestId, at(minute),
+                    generation);
+        }
     }
 
     private static Instant at(int minute) {
@@ -190,6 +195,21 @@ class ContestScoreRecorderTest extends PostgresTest {
         assertThat(row(k)).isEqualTo(score(k, 1, at(10)));
 
         assertThat(recorder.record(k.rejudge(wrong, AC, 5))).isTrue();
+
+        assertThat(row(k)).isEqualTo(score(k, 0, at(5)));
+    }
+
+    /** A rejudge's verdict arriving after a newer rejudge's (relay passes, a DLQ replay) leaves the newer score. */
+    @Test
+    void anOlderRejudgeArrivingLateLeavesTheScoreOfTheNewerOne() {
+        Key k = key();
+        UUID wrong = UUID.randomUUID();
+        recorder.record(k.verdict(wrong, WA, 5));
+        recorder.record(k.verdict(UUID.randomUUID(), AC, 10));
+        assertThat(recorder.record(k.rejudge(wrong, AC, 5, 2))).isTrue();
+        assertThat(row(k)).isEqualTo(score(k, 0, at(5)));
+
+        assertThat(recorder.record(k.rejudge(wrong, WA, 5, 1))).isFalse();
 
         assertThat(row(k)).isEqualTo(score(k, 0, at(5)));
     }
