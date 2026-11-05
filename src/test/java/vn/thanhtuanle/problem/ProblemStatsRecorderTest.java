@@ -336,6 +336,28 @@ class ProblemStatsRecorderTest extends PostgresTest {
     }
 
     @Test
+    void aDifferentVerdictOfTheCountedGenerationLeavesTheCountedOne(CapturedOutput output) {
+        UUID problemId = problem();
+        UUID submissionId = UUID.randomUUID();
+        recorder.record(firstOfGeneration(submissionId, problemId, AC));
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE, 2))).isTrue();
+        LocalDateTime longAgo = LocalDateTime.of(2020, 1, 1, 0, 0);
+        flush();
+        jdbc.update("UPDATE t_processed_verdicts SET processed_at = ? WHERE submission_id = ?", longAgo, submissionId);
+
+        // One generation has one verdict: a second, different one can only come from a producer bug.
+        assertThat(recorder.record(rejudge(submissionId, problemId, AC, 2))).isFalse();
+        // The same verdict of that generation is a plain duplicate.
+        assertThat(recorder.record(rejudge(submissionId, problemId, TLE, 2))).isFalse();
+
+        assertThat(count(problemId, TLE)).isEqualTo(1L);
+        assertThat(count(problemId, AC)).isZero();
+        assertThat(lastStatus(submissionId)).isEqualTo(TLE);
+        assertThat(lastGeneration(submissionId)).isEqualTo(2);
+        assertThat(output).contains("Conflicting verdict 0 for submission " + submissionId + " in generation 2: verdict 1");
+    }
+
+    @Test
     void aRejudgeWithTheSameVerdictStillRecordsItsGeneration() {
         UUID problemId = problem();
         UUID submissionId = UUID.randomUUID();

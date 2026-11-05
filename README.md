@@ -85,8 +85,10 @@ Rejudge order: two verdicts of one submission can arrive in either order (two ou
 batches at once; a dead letter is replayed after a newer rejudge). From oj-common 0.10.0 each verdict carries its
 generation (`rejudgeCount`: 0 for the first verdict, n after the n-th rejudge), and `t_processed_verdicts.last_generation`
 (V10) keeps the newest generation counted. A rejudge of an older generation is ignored, statistics and contest score
-both, and logged as "generation … is older than the counted generation …"; a rejudge of the same or a newer one moves
-the count as before. A verdict without a generation (from a submission-service older than oj-common 0.10.0, or
+both, and logged as "generation … is older than the counted generation …"; a rejudge of a newer one moves the count as
+before, and the same verdict of the counted generation is a duplicate. A different verdict of the counted generation
+cannot come from a working submission-service (it lands one verdict per generation): the counted verdict stays and an
+ERROR "Conflicting verdict … in generation …" asks for `scripts/stats-check.sh`. A verdict without a generation (from a submission-service older than oj-common 0.10.0, or
 dead-lettered before that deploy) cannot be ordered and is applied as it arrives: replay such rejudge events only when
 no newer rejudge happened for those submissions, or run `scripts/stats-check.sh` afterwards (it checks the counts, not
 contest scores). Deploy problem-service before submission-service: it reads verdicts with and without a generation.
